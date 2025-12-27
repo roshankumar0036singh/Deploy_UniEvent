@@ -1,7 +1,9 @@
-import { exchangeCodeAsync, Prompt, ResponseType, useAuthRequest } from 'expo-auth-session';
+import { makeRedirectUri, Prompt, ResponseType, useAuthRequest } from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
+import { Platform } from 'react-native';
 
-const CLIENT_ID = '447974687688-qeiu17sp40o16nkupfen6cqcd4gomnov.apps.googleusercontent.com'; // Keep your working ID
+// Use the same Client ID as AuthScreen to ensure consistent Redirect URI configuration
+const CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || '447974687688-qeiu17sp40o16nkupfen6cqcd4gomnov.apps.googleusercontent.com';
 const DISCOVERY = {
   authorizationEndpoint: 'https://accounts.google.com/o/oauth2/v2/auth',
   tokenEndpoint: 'https://oauth2.googleapis.com/token',
@@ -14,37 +16,39 @@ const SCOPES = [
 WebBrowser.maybeCompleteAuthSession();
 
 export const useCalendarAuth = () => {
-  const redirectUri = 'https://auth.expo.io/@vinaykt_06/centralized-event-platform';
-  
+  // Simplified Redirect Logic
+  const redirectUri = Platform.OS === 'web'
+      ? window.location.origin
+      : makeRedirectUri({ useProxy: true });
+
+  // 🔍 DEBUG: Show Redirect URI only on Mobile Web (Ngrok)
+  useEffect(() => {
+      if (Platform.OS === 'web' && window.location.hostname !== 'localhost') {
+          Alert.alert(
+             "Mobile Web Calendar Debug", 
+             `Generated Redirect URI:\n${redirectUri}\n\nPlease add EXACTLY this to Google Console.`
+         );
+      }
+  }, []);
+
   const [request, response, promptAsync] = useAuthRequest(
     {
       clientId: CLIENT_ID,
       scopes: SCOPES,
       redirectUri,
-      responseType: ResponseType.Code,  // ✅ FIXED: Use Code flow for Expo Go proxy
+      responseType: ResponseType.Token,  
       prompt: Prompt.SelectAccount,
+      usePKCE: false, // ✅ FIXED: Disable PKCE for Implicit Flow (ResponseType.Token)
     },
     DISCOVERY
   );
 
-  // ✅ NEW: Exchange code for tokens after success
+  // ✅ FIXED: Using Implicit Flow (ResponseType.Token), so we get accessToken directly.
   const getAccessToken = async () => {
-    if (response?.type === 'success' && response.params.code) {
-      try {
-        const tokenResult = await exchangeCodeAsync(
-          {
-            clientId: CLIENT_ID,
-            code: response.params.code,
-            redirectUri, // Required for token exchange
-            extraParams: request?.codeVerifier ? { code_verifier: request.codeVerifier } : {}, // PKCE - code_verifier is on request object
-          },
-          DISCOVERY
-        );
-        return tokenResult.accessToken;
-      } catch (error) {
-        console.error('Token exchange failed:', error);
-        throw new Error('Failed to exchange authorization code for token');
-      }
+    if (response?.type === 'success') {
+      // Check both locations just to be safe (authentication object is preferred in newer versions)
+      const token = response.authentication?.accessToken || response.params?.access_token;
+      return token || null;
     }
     return null;
   };

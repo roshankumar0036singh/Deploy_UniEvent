@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useAuth } from '../lib/AuthContext';
 import { useTheme } from '../lib/ThemeContext'; // Import Theme
 
@@ -31,25 +31,38 @@ export default function AuthScreen() {
     iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
     webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
     
-    // allow makeRedirectUri to auto-detect the correct scheme (exp:// for Expo Go)
-    redirectUri: process.env.EXPO_PUBLIC_REDIRECT_URI || makeRedirectUri({
-      useProxy: true
-    }),
+    // On Web, use the current window location directly to avoid Proxy issues.
+    // On Native, use ENV var or fallback to Expo Proxy auto-detection.
+    // Simplified Redirect Logic for Web Focus
+    redirectUri: Platform.OS === 'web' 
+      ? (window.location.origin || process.env.EXPO_PUBLIC_REDIRECT_URI) 
+      : (process.env.EXPO_PUBLIC_REDIRECT_URI || makeRedirectUri({ useProxy: true })),
   });
 
+  // Removed Debug Alerts for cleaner UX ON LOCALHOST
+  
   useEffect(() => {
-     if (request) {
-         console.log("Current Redirect URI:", request.redirectUri);
-         // Debug: Show URI to user to ensure matches Google Cloud
+     // 🔍 DEBUG: Show Redirect URI only on Mobile Web (Ngrok/LAN)
+     if (Platform.OS === 'web' && window.location.hostname !== 'localhost' && request) {
+         Alert.alert(
+             "Mobile Web Debug", 
+             `Generated Redirect URI:\n${request.redirectUri}\n\nPlease add EXACTLY this to Google Console.`
+         );
      }
   }, [request]);
-
   useEffect(() => {
     if (response?.type === 'error') {
       Alert.alert('Auth Error', JSON.stringify(response.error || "Unknown Error", null, 2));
     } else if (response?.type === 'success') {
       const { id_token } = response.params;
-      const credential = GoogleAuthProvider.credential(id_token);
+      const { accessToken } = response.authentication || {};
+      
+      if (!id_token && !accessToken) {
+          Alert.alert("Auth Error", "No tokens returned from Google");
+          return;
+      }
+
+      const credential = GoogleAuthProvider.credential(id_token || null, accessToken || null);
       setLoading(true);
       signInWithCredential(auth, credential)
         .then(() => {

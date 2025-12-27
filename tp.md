@@ -34,7 +34,9 @@ A full-stack, hackathon-ready event platform built with Expo (React Native + Web
         ```bash
         cd app
         npx expo start --clear
+        npx expo start --web --clear
         ```
+        npx expo start --web --port 19006 --clear
         - Press `w` to run in Web Browser.
         - Scan QR code to run on Android Device (Expo Go).
 

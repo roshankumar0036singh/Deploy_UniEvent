@@ -1,7 +1,9 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 import { createUserWithEmailAndPassword, signOut as firebaseSignOut, onAuthStateChanged, signInWithEmailAndPassword } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { createContext, useContext, useEffect, useState } from 'react';
+import { Platform } from 'react-native';
 import { auth, db } from './firebaseConfig';
 
 const AuthContext = createContext({});
@@ -55,11 +57,27 @@ export const AuthProvider = ({ children }) => {
     return unsubscribe;
   }, []);
 
-  // --- Account Management Utils ---
+// Helper to interact with storage abstractly
+const getItemAsync = async (key) => {
+    if (Platform.OS === 'web') {
+        const value = await AsyncStorage.getItem(key);
+        return value;
+    } else {
+        return await SecureStore.getItemAsync(key);
+    }
+};
+
+const setItemAsync = async (key, value) => {
+    if (Platform.OS === 'web') {
+        return await AsyncStorage.setItem(key, value);
+    } else {
+        return await SecureStore.setItemAsync(key, value);
+    }
+};
 
   const loadSavedAccounts = async () => {
       try {
-          const json = await SecureStore.getItemAsync('saved_accounts');
+          const json = await getItemAsync('saved_accounts');
           if (json) {
               setSavedAccounts(JSON.parse(json));
           }
@@ -72,7 +90,7 @@ export const AuthProvider = ({ children }) => {
       try {
           // Get existing accounts
           let currentAccounts = [];
-          const json = await SecureStore.getItemAsync('saved_accounts');
+          const json = await getItemAsync('saved_accounts');
           if (json) currentAccounts = JSON.parse(json);
 
           // Update or Add
@@ -91,7 +109,7 @@ export const AuthProvider = ({ children }) => {
               currentAccounts.push(newAccount);
           }
 
-          await SecureStore.setItemAsync('saved_accounts', JSON.stringify(currentAccounts));
+          await setItemAsync('saved_accounts', JSON.stringify(currentAccounts));
           setSavedAccounts(currentAccounts);
       } catch (e) {
           console.log("Failed to save account", e);
@@ -120,7 +138,7 @@ export const AuthProvider = ({ children }) => {
 
   const removeSavedAccount = async (targetEmail) => {
       const newAccounts = savedAccounts.filter(a => a.email !== targetEmail);
-      await SecureStore.setItemAsync('saved_accounts', JSON.stringify(newAccounts));
+      await setItemAsync('saved_accounts', JSON.stringify(newAccounts));
       setSavedAccounts(newAccounts);
   };
 

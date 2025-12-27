@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Image, Linking, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import ScreenWrapper from '../components/ScreenWrapper';
 import { useAuth } from '../lib/AuthContext';
+import * as CalendarService from '../lib/CalendarService';
 import { db } from '../lib/firebaseConfig';
 import { scheduleEventReminder } from '../lib/notificationService';
 import { useTheme } from '../lib/ThemeContext';

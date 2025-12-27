@@ -3,6 +3,8 @@ import { useEffect, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { db } from '../lib/firebaseConfig';
 
+import { useAuth } from '../lib/AuthContext';
+
 export default function DesktopAdmin() {
   const [activeTab, setActiveTab] = useState('clubs'); // 'clubs' | 'events' | 'analytics'
   const [clubs, setClubs] = useState([]);
@@ -27,10 +29,36 @@ export default function DesktopAdmin() {
     setEvents(list);
   };
 
-  const approveClub = async (clubId) => {
+  const { user } = useAuth(); // Get current admin user
+  const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000'; // Backend URL
+
+  const approveClub = async (clubId, ownerId) => {
     try {
+      // 1. Update Firestore
       await updateDoc(doc(db, 'clubs', clubId), { approved: true });
+
+      // 2. Call Backend to Set Role
+      if (user && ownerId) {
+          const token = await user.getIdToken();
+          const response = await fetch(`${API_URL}/api/setRole`, {
+              method: 'POST',
+              headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${token}`
+              },
+              body: JSON.stringify({ uid: ownerId, role: 'club' })
+          });
+
+          if (!response.ok) {
+              const err = await response.text();
+              console.error("Backend Error:", err);
+              Alert.alert('Warning', 'Club approved but Role update failed: ' + err);
+              return;
+          }
+      }
+
       fetchClubs();
+      Alert.alert('Success', 'Club approved and Owner Role updated!');
     } catch (error) {
       console.error(error);
       Alert.alert('Error', 'Failed to approve');
@@ -73,7 +101,7 @@ export default function DesktopAdmin() {
                   <Text style={styles.cell}>{club.approved ? 'Approved' : 'Pending'}</Text>
                   <View style={styles.cell}>
                     {!club.approved && (
-                      <TouchableOpacity style={styles.approveBtn} onPress={() => approveClub(club.id)}>
+                      <TouchableOpacity style={styles.approveBtn} onPress={() => approveClub(club.id, club.ownerUserId)}>
                         <Text style={styles.approveText}>Approve</Text>
                       </TouchableOpacity>
                     )}
