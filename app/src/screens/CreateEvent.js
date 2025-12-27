@@ -254,29 +254,51 @@ useEffect(() => {
                 />
 
                 <Text style={styles.label}>Start Time</Text>
-                <View style={styles.dateRow}>
-                        <TouchableOpacity style={styles.dateBtn} onPress={() => showDatepicker('date', true)}>
-                            <Text style={{color: theme.colors.text}}>{startDate.toLocaleDateString()}</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity style={styles.dateBtn} onPress={() => showDatepicker('time', true)}>
-                            <Text style={{color: theme.colors.text}}>{startDate.toLocaleTimeString()}</Text>
-                        </TouchableOpacity>
-                </View>
-                {showStartPicker && (
-                    <DateTimePicker testID="dateTimePicker" value={startDate} mode={dateMode} is24Hour={true} display="default" onChange={onChangeStart} />
+                {Platform.OS === 'web' ? (
+                    <input 
+                        type="datetime-local" 
+                        value={new Date(startDate.getTime() - (startDate.getTimezoneOffset() * 60000)).toISOString().slice(0, 16)} 
+                        onChange={(e) => setStartDate(new Date(e.target.value))}
+                        style={{ padding: 10, fontSize: 16, borderRadius: 5, border: '1px solid #ccc', marginBottom: 10, display: 'block', width: '100%' }}
+                    />
+                ) : (
+                    <>
+                        <View style={styles.dateRow}>
+                                <TouchableOpacity style={styles.dateBtn} onPress={() => showDatepicker('date', true)}>
+                                    <Text style={{color: theme.colors.text}}>{startDate.toLocaleDateString()}</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity style={styles.dateBtn} onPress={() => showDatepicker('time', true)}>
+                                    <Text style={{color: theme.colors.text}}>{startDate.toLocaleTimeString()}</Text>
+                                </TouchableOpacity>
+                        </View>
+                        {showStartPicker && (
+                            <DateTimePicker testID="dateTimePicker" value={startDate} mode={dateMode} is24Hour={true} display="default" onChange={onChangeStart} />
+                        )}
+                    </>
                 )}
 
                 <Text style={styles.label}>End Time</Text>
-                <View style={styles.dateRow}>
-                        <TouchableOpacity style={styles.dateBtn} onPress={() => showDatepicker('date', false)}>
-                            <Text style={{color: theme.colors.text}}>{endDate.toLocaleDateString()}</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity style={styles.dateBtn} onPress={() => showDatepicker('time', false)}>
-                            <Text style={{color: theme.colors.text}}>{endDate.toLocaleTimeString()}</Text>
-                        </TouchableOpacity>
-                </View>
-                    {showEndPicker && (
-                    <DateTimePicker testID="dateTimePicker" value={endDate} mode={dateMode} is24Hour={true} display="default" onChange={onChangeEnd} />
+                {Platform.OS === 'web' ? (
+                    <input 
+                        type="datetime-local" 
+                        value={new Date(endDate.getTime() - (endDate.getTimezoneOffset() * 60000)).toISOString().slice(0, 16)} 
+                        onChange={(e) => setEndDate(new Date(e.target.value))}
+                        style={{ padding: 10, fontSize: 16, borderRadius: 5, border: '1px solid #ccc', marginBottom: 10, display: 'block', width: '100%' }}
+                    />
+                ) : (
+                    <>
+                        <View style={styles.dateRow}>
+                                <TouchableOpacity style={styles.dateBtn} onPress={() => showDatepicker('date', false)}>
+                                    <Text style={{color: theme.colors.text}}>{endDate.toLocaleDateString()}</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity style={styles.dateBtn} onPress={() => showDatepicker('time', false)}>
+                                    <Text style={{color: theme.colors.text}}>{endDate.toLocaleTimeString()}</Text>
+                                </TouchableOpacity>
+                        </View>
+                            {showEndPicker && (
+                            <DateTimePicker testID="dateTimePicker" value={endDate} mode={dateMode} is24Hour={true} display="default" onChange={onChangeEnd} />
+                        )}
+                    </>
                 )}
 
                 {/* --- EVENT MODE SECTION --- */}

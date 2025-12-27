@@ -28,7 +28,17 @@
     },
     "web": {
       "favicon": "./assets/favicon.png",
-      "bundler": "metro"
+      "bundler": "metro",
+      "name": "UniEvent",
+      "shortName": "UniEvent",
+      "startUrl": "/",
+      "display": "standalone",
+      "backgroundColor": "#ffffff",
+      "themeColor": "#6200ee",
+      "description": "Centralized Event Platform for university clubs and events.",
+      "orientation": "portrait",
+      "dir": "ltr",
+      "lang": "en-US"
     },
     "plugins": [
       "expo-notifications"

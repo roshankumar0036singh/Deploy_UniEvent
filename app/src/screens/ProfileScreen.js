@@ -3,7 +3,7 @@ import { Picker } from '@react-native-picker/picker';
 import { updateProfile } from 'firebase/auth';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Platform, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import ScreenWrapper from '../components/ScreenWrapper';
 import { useAuth } from '../lib/AuthContext';
 import { db } from '../lib/firebaseConfig';
@@ -109,21 +109,25 @@ export default function ProfileScreen({ navigation }) {
                         placeholderTextColor={theme.colors.textSecondary}
                     />
 
-                    <Text style={styles.label}>Year of Study</Text>
-                     <View style={styles.pickerContainer}>
-                            <Picker
-                                selectedValue={year}
-                                onValueChange={(itemValue) => setYear(itemValue)}
-                                dropdownIconColor={theme.colors.text}
-                                style={{color: theme.colors.text}}
-                                itemStyle={{color: theme.colors.text}}
-                            >
-                                <Picker.Item label="1st Year" value="1" />
-                                <Picker.Item label="2nd Year" value="2" />
-                                <Picker.Item label="3rd Year" value="3" />
-                                <Picker.Item label="4th Year" value="4" />
-                            </Picker>
-                    </View>
+                    {role !== 'admin' && (
+                        <>
+                            <Text style={styles.label}>Year of Study</Text>
+                            <View style={styles.pickerContainer}>
+                                    <Picker
+                                        selectedValue={String(year)}
+                                        onValueChange={(itemValue) => setYear(itemValue)}
+                                        dropdownIconColor={theme.colors.text}
+                                        style={{color: theme.colors.text}}
+                                        itemStyle={{color: theme.colors.text}}
+                                    >
+                                        <Picker.Item label="1st Year" value="1" />
+                                        <Picker.Item label="2nd Year" value="2" />
+                                        <Picker.Item label="3rd Year" value="3" />
+                                        <Picker.Item label="4th Year" value="4" />
+                                    </Picker>
+                            </View>
+                        </>
+                    )}
 
                     {role !== 'admin' && (
                         <>
@@ -162,7 +166,7 @@ export default function ProfileScreen({ navigation }) {
             <MenuItem 
                 icon="calendar-outline" 
                 label="My Created Events" 
-                onPress={() => navigation.navigate('MyEvents')} 
+                onPress={() => navigation.navigate('Main', { screen: 'MyEventsTab' })} 
                 theme={theme}
                 styles={styles}
             />
@@ -339,6 +343,7 @@ const getStyles = (theme) => StyleSheet.create({
       backgroundColor: theme.colors.surface,
       fontSize: 16,
       color: theme.colors.text, 
+      ...(Platform.OS === 'web' ? { outlineStyle: 'none' } : {})
   },
   pickerContainer: {
       borderWidth: 1,
@@ -346,6 +351,7 @@ const getStyles = (theme) => StyleSheet.create({
       borderRadius: 8,
       marginBottom: 10,
       backgroundColor: theme.colors.surface,
+      overflow: 'hidden', // Fixes rounded corners on web
   },
   editActions: {
       flexDirection: 'row',
