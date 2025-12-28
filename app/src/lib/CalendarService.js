@@ -104,9 +104,13 @@ export const createMeetEvent = async (accessToken, eventDetails) => {
 
 export const addToCalendar = async (accessToken, event) => {
     try {
+        const description = event.meetLink 
+            ? `${event.description}\n\nJoin with Google Meet: ${event.meetLink}\n\nApp Event ID: ${event.id}`
+            : `${event.description}\n\nApp Event ID: ${event.id}`;
+
         const eventBody = {
             summary: event.title,
-            description: `${event.description}\n\nApp Event ID: ${event.id}`,
+            description: description,
             location: event.location,
             start: { dateTime: event.startAt },
             end: { dateTime: event.endAt },

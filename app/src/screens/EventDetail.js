@@ -160,6 +160,25 @@ export default function EventDetail({ route, navigation }) {
       }
   };
 
+  const handleAddToCalendar = async () => {
+    // Check if user is signed in via Google
+    const googleProvider = user.providerData?.find(p => p.providerId === 'google.com');
+    
+    if (googleProvider) {
+        // User is already signed in with Google, use this email as hint
+        // This makes the auth flow smoother by re-selecting the known account
+        try {
+            await promptAsync({ extraParams: { login_hint: googleProvider.email } });
+        } catch (e) {
+            console.error("Calendar Auth Error (Smart):", e);
+            promptAsync(); // Fallback
+        }
+    } else {
+        // Standard flow for email/password users
+        promptAsync();
+    }
+  };
+
   const handleReminder = async () => {
       try {
           await setDoc(doc(db, 'reminders', `${user.uid}_${eventId}`), {
@@ -269,16 +288,33 @@ export default function EventDetail({ route, navigation }) {
 
             <Text style={styles.title}>{event.title}</Text>
             
-            <View style={styles.infoRow}>
-                <Ionicons name="location-outline" size={20} color={theme.colors.textSecondary} />
-                <Text style={styles.infoText}>{event.location}</Text>
-            </View>
-            <View style={styles.infoRow}>
-                <Ionicons name="time-outline" size={20} color={theme.colors.textSecondary} />
-                <Text style={styles.infoText}>
-                    {new Date(event.startAt).toLocaleString()} 
-                    {event.endAt ? ` - ${new Date(event.endAt).toLocaleTimeString()}` : ''}
-                </Text>
+            {/* Header Row: Info & Calendar Button */}
+            <View style={styles.headerRow}>
+                <View style={styles.headerInfoCol}>
+                    <View style={styles.infoRow}>
+                        <Ionicons name="location-outline" size={20} color={theme.colors.textSecondary} />
+                        <Text style={styles.infoText}>{event.location}</Text>
+                    </View>
+                    <View style={styles.infoRow}>
+                        <Ionicons name="time-outline" size={20} color={theme.colors.textSecondary} />
+                        <Text style={styles.infoText}>
+                            {new Date(event.startAt).toLocaleString()} 
+                            {event.endAt ? ` - ${new Date(event.endAt).toLocaleTimeString()}` : ''}
+                        </Text>
+                    </View>
+                </View>
+
+                {/* Add to Calendar Button */}
+                {!isSuspended && (
+                    <TouchableOpacity 
+                        style={styles.calendarBtn} 
+                        onPress={handleAddToCalendar}
+                        disabled={!request}
+                    >
+                        <Ionicons name="calendar-outline" size={28} color={theme.colors.primary} />
+                        <Text style={styles.calendarBtnText}>Add</Text>
+                    </TouchableOpacity>
+                )}
             </View>
 
             {/* Target Audience */}
@@ -441,6 +477,33 @@ const getStyles = (theme) => StyleSheet.create({
   infoText: {
       fontSize: 14,
       color: theme.colors.textSecondary,
+      flex: 1, // Allow text to wrap if needed
+  },
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start', // Align top in case text wraps
+    marginBottom: 5,
+  },
+  headerInfoCol: {
+      flex: 1,
+      marginRight: 10,
+  },
+  calendarBtn: {
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: 8,
+      backgroundColor: theme.colors.surface, // Or a light primary tint
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      ...theme.shadows.small,
+  },
+  calendarBtnText: {
+      fontSize: 10,
+      fontWeight: 'bold',
+      color: theme.colors.primary,
+      marginTop: 2,
   },
   targetSection: {
       marginTop: 5,
