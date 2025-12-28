@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { collection, limit, onSnapshot, query, where } from 'firebase/firestore';
 import { useEffect, useRef, useState } from 'react';
-import { Animated, Platform, ScrollView, Share, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Animated, Dimensions, Platform, ScrollView, Share, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import EventCard from '../components/EventCard';
 import FeedbackModal from '../components/FeedbackModal';
 import { EventListSkeleton } from '../components/SkeletonLoader';
