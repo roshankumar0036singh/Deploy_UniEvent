@@ -3,13 +3,13 @@
   "version": "1.0.0",
   "main": "node_modules/expo/AppEntry.js",
   "scripts": {
-    "patch-sea": "node -e \"const fs=require('fs'),p='node_modules/@expo/cli/build/src/start/server/metro/externals.js';let c=fs.readFileSync(p,'utf8');if(!c.includes('PATCHED_SEA')){c=c.replace(/for\\s*\\(const\\s+(\\w+)\\s+of\\s+NODE_STDLIB_MODULES\\)/g,'for(const $1 of NODE_STDLIB_MODULES.filter(m=>!m.includes(\\\":\\\")))/*PATCHED_SEA*/');fs.writeFileSync(p,c);console.log('Patched!');}else{console.log('Already patched.');}\"",
+    "patch-sea": "node scripts/patch-expo-sea.js",
     "prestart": "npm run patch-sea",
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "npm run patch-sea && expo start --web",
-    "build:web": "expo export -p web --output-dir web-build",
+    "build:web": "npm run patch-sea && expo export -p web --output-dir web-build",
     "postinstall": "npm run patch-sea"
   },
   "dependencies": {
