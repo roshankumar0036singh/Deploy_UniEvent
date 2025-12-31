@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { collection, limit, onSnapshot, query, where } from 'firebase/firestore';
 import { useEffect, useRef, useState } from 'react';
 import { Animated, Platform, ScrollView, Share, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
@@ -6,7 +7,7 @@ import EventCard from '../components/EventCard';
 import FeedbackModal from '../components/FeedbackModal';
 import { EventListSkeleton } from '../components/SkeletonLoader';
 import { useAuth } from '../lib/AuthContext';
-import { submitFeedback } from '../lib/feedbackService'; // Ensure this exists or mock it
+import { submitFeedback } from '../lib/feedbackService';
 import { db } from '../lib/firebaseConfig';
 import { useTheme } from '../lib/ThemeContext';
 
@@ -129,19 +130,20 @@ export default function UserFeed({ navigation, headerContent }) {
         }
 
         // 2. Tab/Category Filtering
+        // Common Date Threshold
+        const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+
         if (activeFilter === 'Upcoming') {
-            const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
             filtered = filtered.filter(e => new Date(e.startAt) >= yesterday);
             // Sort: Closest upcoming first
             filtered.sort((a, b) => new Date(a.startAt) - new Date(b.startAt));
         } else if (activeFilter === 'Past') {
-            const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
             filtered = filtered.filter(e => new Date(e.startAt) < yesterday);
             // Sort: Most recent past first
             filtered.sort((a, b) => new Date(b.startAt) - new Date(a.startAt));
         } else {
-            // Category filters
-            filtered = filtered.filter(e => e.category === activeFilter);
+            // Category filters - ALSO HIDE PAST EVENTS
+            filtered = filtered.filter(e => e.category === activeFilter && new Date(e.startAt) >= yesterday);
             // Sort: Closest upcoming first for categories too
             filtered.sort((a, b) => new Date(a.startAt) - new Date(b.startAt));
         }
@@ -153,12 +155,12 @@ export default function UserFeed({ navigation, headerContent }) {
 
     const StickyHeader = () => (
         <View style={{ backgroundColor: theme.colors.background, paddingBottom: 10 }}>
-            {/* Search Bar */}
-            <View style={[styles.searchContainer, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+            {/* Search Bar - Floating Pill */}
+            <View style={[styles.searchContainer, { backgroundColor: theme.colors.surface, ...theme.shadows.small }]}>
                 <Ionicons name="search" size={20} color={theme.colors.textSecondary} />
                 <TextInput
                     style={[styles.searchInput, { color: theme.colors.text }]}
-                    placeholder="Search events, topics, location..."
+                    placeholder="Search events..."
                     placeholderTextColor={theme.colors.textSecondary}
                     value={searchQuery}
                     onChangeText={setSearchQuery}
@@ -176,23 +178,30 @@ export default function UserFeed({ navigation, headerContent }) {
                     showsHorizontalScrollIndicator={false}
                     contentContainerStyle={styles.filterContent}
                 >
-                    {FILTERS.map(f => (
-                        <TouchableOpacity
-                            key={f}
-                            style={[
-                                styles.chip,
-                                { backgroundColor: activeFilter === f ? theme.colors.primary : theme.colors.surface },
-                                activeFilter === f ? theme.shadows.small : { borderWidth: 1, borderColor: theme.colors.border }
-                            ]}
-                            onPress={() => setActiveFilter(f)}
-                        >
-                            <Text style={[
-                                styles.chipText,
-                                { color: activeFilter === f ? '#fff' : theme.colors.textSecondary },
-                                activeFilter === f && { fontWeight: 'bold' }
-                            ]}>{f}</Text>
-                        </TouchableOpacity>
-                    ))}
+                    {FILTERS.map(f => {
+                        const isActive = activeFilter === f;
+                        return (
+                            <TouchableOpacity
+                                key={f}
+                                onPress={() => setActiveFilter(f)}
+                                style={{ marginRight: 10, borderRadius: 25, ...theme.shadows.small }}
+                            >
+                                {isActive ? (
+                                    <LinearGradient
+                                        colors={[theme.colors.primary, theme.colors.secondary || '#FFC107']}
+                                        start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+                                        style={styles.chip}
+                                    >
+                                        <Text style={[styles.chipText, { color: '#fff' }]}>{f}</Text>
+                                    </LinearGradient>
+                                ) : (
+                                    <View style={[styles.chip, { backgroundColor: theme.colors.surface }]}>
+                                        <Text style={[styles.chipText, { color: theme.colors.textSecondary }]}>{f}</Text>
+                                    </View>
+                                )}
+                            </TouchableOpacity>
+                        );
+                    })}
                 </ScrollView>
             </View>
         </View>
@@ -224,7 +233,7 @@ export default function UserFeed({ navigation, headerContent }) {
         <Animated.View style={{ transform: [{ translateY: headerTranslateY }] }}>
             {/* Recommendations Rail */}
             <View style={{ marginBottom: 20 }}>
-                <Text style={{ fontSize: 18, fontWeight: 'bold', marginLeft: 20, marginBottom: 10, color: theme.colors.text }}>Recommended for You</Text>
+                <Text style={styles.sectionTitle}>RECOMMENDED FOR YOU</Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20 }}>
                     {getRecommendedEvents().map(event => (
                         <View key={event.id} style={{ width: 280, marginRight: 15 }}>
@@ -232,7 +241,7 @@ export default function UserFeed({ navigation, headerContent }) {
                         </View>
                     ))}
                     {getRecommendedEvents().length === 0 && (
-                        <Text style={{ color: theme.colors.textSecondary, fontStyle: 'italic' }}>No recommendations yet.</Text>
+                        <Text style={{ color: theme.colors.textSecondary, fontStyle: 'italic', marginHorizontal: 20 }}>No recommendations yet.</Text>
                     )}
                 </ScrollView>
             </View>
@@ -293,24 +302,17 @@ export default function UserFeed({ navigation, headerContent }) {
 
 const styles = StyleSheet.create({
     container: { flex: 1 },
-    headerContainer: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        paddingHorizontal: 20,
-        paddingTop: 10,
-        paddingBottom: 10,
-    },
     searchContainer: {
         flexDirection: 'row',
         alignItems: 'center',
         marginHorizontal: 20,
-        marginTop: 5,
-        marginBottom: 5,
-        paddingHorizontal: 15,
-        paddingVertical: 10,
-        borderRadius: 12,
-        borderWidth: 1,
+        marginTop: 10,
+        marginBottom: 10,
+        paddingHorizontal: 20, // Increased padding
+        paddingVertical: 12,
+        borderRadius: 30, // Full Pill
+        elevation: 4, // Slightly higher shadow
+        shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4 // Explicit shadow
     },
     searchInput: {
         flex: 1,
@@ -332,11 +334,21 @@ const styles = StyleSheet.create({
     chip: {
         paddingHorizontal: 20,
         paddingVertical: 10,
-        borderRadius: 30, // Pill shape
-        marginRight: 10,
+        borderRadius: 25,
         justifyContent: 'center',
+        minWidth: 80,
+        alignItems: 'center'
     },
-    chipText: { fontSize: 13, fontWeight: '600' },
+    chipText: { fontSize: 13, fontWeight: '700' },
+    sectionTitle: {
+        fontSize: 14,
+        fontWeight: '900',
+        marginLeft: 20,
+        marginBottom: 15,
+        letterSpacing: 1,
+        color: '#fff',
+        opacity: 0.9
+    },
     emptyContainer: { alignItems: 'center', marginTop: 50, padding: 20 },
     emptyText: { marginTop: 10, fontSize: 16 },
 });

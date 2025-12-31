@@ -15,6 +15,12 @@ const firebaseConfig = {
   appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
 };
 
+// Validate Config
+if (!firebaseConfig.apiKey) {
+  console.error("Firebase Configuration Error: API Key is missing.");
+  console.error("Please ensure you have a .env file with EXPO_PUBLIC_FIREBASE_API_KEY defined.");
+}
+
 // Initialize App
 const app = initializeApp(firebaseConfig);
 

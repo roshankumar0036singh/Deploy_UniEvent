@@ -1,668 +1,911 @@
 import { Ionicons } from '@expo/vector-icons';
-import { addDoc, collection, deleteDoc, doc, getDoc, onSnapshot, setDoc, updateDoc } from 'firebase/firestore';
+import { LinearGradient } from 'expo-linear-gradient';
+import { addDoc, collection, deleteDoc, doc, getDoc, getDocs, increment, onSnapshot, setDoc, updateDoc, query, where } from 'firebase/firestore';
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Image, Linking, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import ScreenWrapper from '../components/ScreenWrapper';
+import { ActivityIndicator, Alert, Dimensions, ImageBackground, Linking, ScrollView, Share, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import ScreenWrapper from '../components/ScreenWrapper'; // Kept generic but we might bypass in render
 import { useAuth } from '../lib/AuthContext';
 import * as CalendarService from '../lib/CalendarService';
 import { db } from '../lib/firebaseConfig';
-import { scheduleEventReminder } from '../lib/notificationService';
+import { scheduleEventReminder, cancelScheduledNotification } from '../lib/notificationService';
+import { submitFeedback } from '../lib/feedbackService';
 import { useTheme } from '../lib/ThemeContext';
+import FeedbackModal from '../components/FeedbackModal';
+
+const { width } = Dimensions.get('window');
 
 export default function EventDetail({ route, navigation }) {
-  const { eventId } = route.params;
-  const { user, role } = useAuth();
-  const { theme } = useTheme();
-  const styles = useMemo(() => getStyles(theme), [theme]);
-  
-  const [event, setEvent] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [rsvpStatus, setRsvpStatus] = useState(null); // 'going', 'not_going'
-  const [participantCount, setParticipantCount] = useState(0);
+    const { eventId } = route.params;
+    const { user, role } = useAuth();
+    const { theme } = useTheme();
+    const styles = useMemo(() => getStyles(theme), [theme]);
 
-  const [modalVisible, setModalVisible] = useState(false);
+    const [event, setEvent] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [rsvpStatus, setRsvpStatus] = useState(null);
+    const [participantCount, setParticipantCount] = useState(0);
+    const [hasGivenFeedback, setHasGivenFeedback] = useState(false);
+    const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+    const [hostName, setHostName] = useState('Organizer');
+    const [reminderId, setReminderId] = useState(null); // Firestore Doc ID if set
+    const [isBookmarked, setIsBookmarked] = useState(false);
 
-  useEffect(() => {
-    // Real-time listener for event data (in case status changes)
-    const unsubEvent = onSnapshot(doc(db, 'events', eventId), (doc) => {
-        if (doc.exists()) {
-            setEvent({ id: doc.id, ...doc.data() });
-        } else {
-            Alert.alert("Error", "Event not found");
-            navigation.goBack();
+    useEffect(() => {
+        if (event?.ownerId) {
+            getDoc(doc(db, 'users', event.ownerId)).then(snap => {
+                if (snap.exists()) {
+                    setHostName(snap.data().displayName || event.organizerName || 'Organizer');
+                }
+            });
+        } else if (event?.organizerName) {
+            setHostName(event.organizerName);
         }
-        setLoading(false);
-    });
+    }, [event]);
 
-    // Real-time listener for participants
-    const unsubParticipants = onSnapshot(collection(db, `events/${eventId}/participants`), (snapshot) => {
-        setParticipantCount(snapshot.size);
-        // Check my status
-        const myDoc = snapshot.docs.find(d => d.id === user.uid);
-        if (myDoc) setRsvpStatus('going');
-        else setRsvpStatus(null);
-    });
+    // Cleanup logic merged into the main effect or kept simple
+    useEffect(() => {
+        navigation.setOptions({ headerShown: false }); // Hide default header
 
-    return () => {
-        unsubEvent();
-        unsubParticipants();
-    };
-  }, [eventId, user.uid]);
-
-  const toggleRsvp = async () => {
-    if (!user) return;
-
-    // --- PAID / EXTERNAL LINK CHECK ---
-    if (rsvpStatus !== 'going') {
-        if (event.isPaid) {
-            if (event.registrationLink) {
-                // Case 1: Paid & Has Link -> Confirm -> Open Link -> Ask to mark registered
-                Alert.alert(
-                    "Paid Event",
-                    "This is a paid event. You will be redirected to the registration page.",
-                    [
-                        { text: "Cancel", style: "cancel" },
-                        { 
-                            text: "Proceed to Register", 
-                            onPress: () => {
-                                openLink(event.registrationLink);
-                                // Optional: Ask user if they completed it
-                                setTimeout(() => {
-                                    Alert.alert(
-                                        "Did you register?",
-                                        "Mark yourself as registered if you completed the process.",
-                                        [
-                                           { text: "No", style: "cancel" },
-                                           { text: "Yes, I Registered", onPress: () => performRsvp() }
-                                        ]
-                                    )
-                                }, 3000);
-                            }
-                        }
-                    ]
-                );
-                return; // Stop here, wait for callback
+        const unsubEvent = onSnapshot(doc(db, 'events', eventId), (doc) => {
+            if (doc.exists()) {
+                setEvent({ id: doc.id, ...doc.data() });
             } else {
-                // Case 2: Paid & No Link -> Block or Warning
-                Alert.alert(
-                    "Registration Pending",
-                    "Registration for this paid event is not yet open on the app. Please contact the organizers."
-                );
-                return;
+                Alert.alert("Error", "Event not found");
+                navigation.goBack();
             }
-        }
-    }
+            setLoading(false);
+        });
 
-    performRsvp();
-  };
+        const unsubParticipants = onSnapshot(collection(db, `events/${eventId}/participants`), (snapshot) => {
+            setParticipantCount(snapshot.size);
+            if (user) {
+                const myDoc = snapshot.docs.find(d => d.id === user.uid);
+                if (myDoc) setRsvpStatus('going');
+                else setRsvpStatus(null);
+            }
+        });
 
-  const performRsvp = async () => {
-    const ref = doc(db, 'events', eventId, 'participants', user.uid);
-    const userRef = doc(db, 'users', user.uid, 'participating', eventId);
+        getDoc(doc(db, `events/${eventId}/feedback`, user.uid)).then(snap => {
+            if (snap.exists()) setHasGivenFeedback(true);
+        });
 
-    try {
-        if (rsvpStatus === 'going') {
-            await deleteDoc(ref);
-            await deleteDoc(userRef); // Remove from my list
-            Alert.alert("Withdrawn", "You are no longer registered.");
-        } else {
-            // Fetch User Details for Analytics
-            const userDoc = await getDoc(doc(db, 'users', user.uid));
-            const userData = userDoc.exists() ? userDoc.data() : {};
-
-            const participantData = {
-                userId: user.uid,
-                email: user.email,
-                name: user.displayName || 'Anonymous',
-                branch: userData.branch || 'Unknown',
-                year: userData.year || 'Unknown',
-                joinedAt: new Date().toISOString()
-            };
-
-            await setDoc(ref, participantData);
-            await setDoc(userRef, { eventId: eventId, joinedAt: new Date().toISOString() }); // Add to my list
-            
-            // Add to in-app notification center
-            await addDoc(collection(db, 'users', user.uid, 'notifications'), {
-                title: 'Event Registered',
-                body: `You are going to ${event.title}`,
-                read: false,
-                createdAt: new Date().toISOString(),
-                eventId: eventId
+        // Check if reminder exists
+        getDocs(query(collection(db, 'reminders'), where('userId', '==', user.uid), where('eventId', '==', eventId)))
+            .then(snap => {
+                if (!snap.empty) {
+                    setReminderId(snap.docs[0].id);
+                }
             });
 
-            // Auto-schedule reminder on RSVP
-            await scheduleEventReminder(event);
-            Alert.alert("Success", "Registered for event! A reminder has been set for 10 mins before.");
+        // Check if event is bookmarked
+        if (user) {
+            getDoc(doc(db, 'users', user.uid, 'savedEvents', eventId))
+                .then(snap => {
+                    setIsBookmarked(snap.exists());
+                });
         }
-    } catch (e) {
-        console.error(e);
-        Alert.alert("Error", "Failed to update RSVP");
-    }
-  };
 
-  // Google Calendar Integration
-  const { request, response, promptAsync } = CalendarService.useCalendarAuth();
 
-  useEffect(() => {
-     if (response?.type === 'success') {
-         const { access_token } = response.params;
-         performAddToCalendar(access_token);
-     }
-  }, [response]);
 
-  const performAddToCalendar = async (token) => {
-      try {
-          await CalendarService.addToCalendar(token, event);
-          Alert.alert("Success", "Event added to your Google Calendar!");
-      } catch (e) {
-          Alert.alert("Error", "Failed to add to calendar.");
-      }
-  };
+        return () => {
+            unsubEvent();
+            unsubParticipants();
+        };
+    }, [eventId, user]);
 
-  const handleAddToCalendar = async () => {
-    // Check if user is signed in via Google
-    const googleProvider = user.providerData?.find(p => p.providerId === 'google.com');
-    
-    if (googleProvider) {
-        // User is already signed in with Google, use this email as hint
-        // This makes the auth flow smoother by re-selecting the known account
+    // Derived State
+    const isOwner = user && event?.ownerId === user.uid;
+    const isAdmin = role === 'admin';
+    const isSuspended = event?.status === 'suspended';
+
+    const toggleBookmark = async () => {
+        if (!user) {
+            Alert.alert("Error", "Please login to save events.");
+            return;
+        }
+
         try {
-            await promptAsync({ extraParams: { login_hint: googleProvider.email } });
+            console.log("Toggling bookmark for event:", eventId, "Current state:", isBookmarked);
+            const bookmarkRef = doc(db, 'users', user.uid, 'savedEvents', eventId);
+
+            if (isBookmarked) {
+                console.log("Removing bookmark...");
+                await deleteDoc(bookmarkRef);
+                setIsBookmarked(false);
+                Alert.alert("Removed", "Event removed from saved events.");
+            } else {
+                console.log("Adding bookmark...");
+                await setDoc(bookmarkRef, {
+                    eventId: eventId,
+                    savedAt: new Date().toISOString()
+                });
+                setIsBookmarked(true);
+                Alert.alert("Saved", "Event saved for later!");
+            }
+            console.log("Bookmark toggled successfully. New state:", !isBookmarked);
         } catch (e) {
-            console.error("Calendar Auth Error (Smart):", e);
-            promptAsync(); // Fallback
+            console.error("Bookmark error:", e);
+            Alert.alert("Error", `Failed to save event: ${e.message}`);
         }
-    } else {
-        // Standard flow for email/password users
-        promptAsync();
-    }
-  };
+    };
 
-  const handleReminder = async () => {
-      try {
-          await setDoc(doc(db, 'reminders', `${user.uid}_${eventId}`), {
-              userId: user.uid,
-              eventId: eventId,
-              remindAt: event.startAt // Simple logic: remind at start time
-          });
-          
-           // Add to in-app notification center
-          await addDoc(collection(db, 'users', user.uid, 'notifications'), {
-                title: 'Reminder Set',
-                body: `Reminder set for ${event.title}`,
-                read: false,
-                createdAt: new Date().toISOString(),
-                eventId: eventId
-          });
+    const shareEvent = async () => {
+        try {
+            const eventUrl = `https://unievent.app/event/${eventId}`; // Replace with your actual domain
+            const shareMessage = `🎉 Check out this event: ${event.title}\n\n📅 ${new Date(event.startAt).toLocaleDateString()} at ${new Date(event.startAt).toLocaleTimeString()}\n📍 ${event.location || 'Online'}\n\n${eventUrl}`;
 
-          await scheduleEventReminder(event);
-          
-          // Optionally prompt for Google Calendar sync too
-          Alert.alert(
-              "Reminder Set", 
-              "You will be notified 10 minutes before. Add to Google Calendar as well?",
-              [
-                  { text: 'No, thanks' },
-                  { text: 'Yes, Sync', onPress: () => promptAsync() }
-              ]
-          );
+            // For web, use Web Share API if available
+            if (Platform.OS === 'web' && navigator.share) {
+                await navigator.share({
+                    title: event.title,
+                    text: shareMessage,
+                    url: eventUrl,
+                });
+            } else if (Platform.OS === 'web') {
+                // Fallback for web browsers without Share API
+                Alert.alert(
+                    "Share Event",
+                    "Choose a platform:",
+                    [
+                        {
+                            text: "WhatsApp",
+                            onPress: () => {
+                                const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(shareMessage)}`;
+                                window.open(whatsappUrl, '_blank');
+                            }
+                        },
+                        {
+                            text: "Twitter",
+                            onPress: () => {
+                                const twitterUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(shareMessage)}`;
+                                window.open(twitterUrl, '_blank');
+                            }
+                        },
+                        {
+                            text: "Copy Link",
+                            onPress: () => {
+                                navigator.clipboard.writeText(eventUrl);
+                                Alert.alert("Copied!", "Event link copied to clipboard");
+                            }
+                        },
+                        { text: "Cancel", style: "cancel" }
+                    ]
+                );
+            } else {
+                // For mobile (React Native Share)
+                const { Share } = require('react-native');
+                await Share.share({
+                    message: shareMessage,
+                    url: eventUrl,
+                    title: event.title,
+                });
+            }
+        } catch (error) {
+            console.error('Error sharing:', error);
+        }
+    };
 
-      } catch (e) {
-          console.error(e);
-          Alert.alert("Error", "Could not set reminder");
-      }
-  };
+    const toggleReminder = async () => {
+        if (!user) return Alert.alert("Error", "Please login to set reminders.");
 
-  // --- Moderation Actions ---
-  const handleSuspend = async () => {
-      try {
-          await updateDoc(doc(db, 'events', eventId), { status: 'suspended' });
-          Alert.alert("Suspended", "Event is now hidden from public feed.");
-      } catch (e) { console.error(e) }
-  };
+        try {
+            if (reminderId) {
+                // Remove Reminder
+                const reminderDoc = await getDoc(doc(db, 'reminders', reminderId));
+                if (reminderDoc.exists()) {
+                    await cancelScheduledNotification(reminderDoc.data().notificationId);
+                }
+                await deleteDoc(doc(db, 'reminders', reminderId));
+                setReminderId(null);
+                Alert.alert("Reminder Removed");
+            } else {
+                // Set Reminder
+                const notifId = await scheduleEventReminder(event);
+                if (notifId) {
+                    const docRef = await addDoc(collection(db, 'reminders'), {
+                        userId: user.uid,
+                        eventId: event.id,
+                        eventTitle: event.title,
+                        remindAt: new Date(new Date(event.startAt).getTime() - 10 * 60000), // 10 mins before
+                        notificationId: notifId,
+                        createdAt: new Date().toISOString()
+                    });
+                    setReminderId(docRef.id);
+                    Alert.alert("Success", "Reminder set for 10 mins before event.");
+                } else {
+                    Alert.alert("Notice", "Event is too close or passed.");
+                }
+            }
+        } catch (e) {
+            console.error(e);
+            Alert.alert("Error", "Action failed.");
+        }
+    };
 
-  const handleAppeal = async () => {
-      try {
-          await updateDoc(doc(db, 'events', eventId), { appealStatus: 'pending' });
-          Alert.alert("Appeal Sent", "Admin will review your request.");
-      } catch (e) { console.error(e) }
-  };
+    const toggleRsvp = async () => {
+        if (!user) {
+            Alert.alert("Sign In", "Please sign in to register.");
+            return;
+        }
 
-  const handleUnsuspend = async () => {
-       try {
-          await updateDoc(doc(db, 'events', eventId), { status: 'active', appealStatus: 'resolved' });
-          Alert.alert("Restored", "Event is active again.");
-      } catch (e) { console.error(e) }
-  };
+        // Paid Event Logic
+        if (event.isPaid && rsvpStatus !== 'going') {
+            if (event.registrationLink) {
+                Alert.alert("External Registration", "This event requires external registration.", [
+                    { text: "Cancel", style: "cancel" },
+                    { text: "Go to Link", onPress: () => openLink(event.registrationLink) }
+                ]);
+                return;
+            }
+            // Navigate to Payment
+            navigation.navigate('Payment', { event, price: event.price || 0 });
+            return;
+        }
 
-  const openLink = (url) => {
-      if (url) Linking.openURL(url).catch(err => Alert.alert("Error", "Invalid URL"));
-  };
+        performRsvp();
+    };
 
-  if (loading || !event) return <ActivityIndicator size="large" color={theme.colors.primary} style={{marginTop: 50}} />;
+    const performRsvp = async () => {
+        const ref = doc(db, 'events', eventId, 'participants', user.uid);
+        const userRef = doc(db, 'users', user.uid, 'participating', eventId);
+        const userProfileRef = doc(db, 'users', user.uid);
 
-  const isOwner = event.ownerId === user.uid;
-  const isAdmin = role === 'admin';
-  const isSuspended = event.status === 'suspended';
+        try {
+            if (rsvpStatus === 'going') {
+                await deleteDoc(ref);
+                await deleteDoc(userRef);
+                await updateDoc(userProfileRef, { points: increment(-10) });
+                Alert.alert("Withdrawn", "You are no longer registered. (-10 Points)");
+            } else {
+                const userDoc = await getDoc(userProfileRef);
+                const userData = userDoc.exists() ? userDoc.data() : {};
 
-  return (
-    <ScreenWrapper>
-      <ScrollView>
-        {/* Banner - Click to Expand */}
-        <TouchableOpacity onPress={() => setModalVisible(true)}>
-            <Image 
-                source={{ uri: event.bannerUrl || 'https://via.placeholder.com/800x600' }} 
-                style={styles.banner} 
-                resizeMode="cover"
-            />
-        </TouchableOpacity>
+                await setDoc(ref, {
+                    userId: user.uid,
+                    email: user.email,
+                    name: user.displayName || 'Anonymous',
+                    branch: userData.branch || 'Unknown',
+                    year: userData.year || 'Unknown',
+                    joinedAt: new Date().toISOString()
+                });
+                await setDoc(userRef, { eventId: eventId, joinedAt: new Date().toISOString() });
+                await updateDoc(userProfileRef, { points: increment(10) });
 
-        <View style={styles.container}>
-            {/* Moderation Banner */}
-            {isSuspended && (
-                <View style={styles.warningBox}>
-                    <Text style={styles.warningText}>⚠️ This event is SUSPENDED due to guidelines violation.</Text>
-                    {isOwner && (
-                        <TouchableOpacity onPress={handleAppeal} style={styles.appealBtn}>
-                            <Text style={styles.appealText}>Raise Appeal</Text>
-                        </TouchableOpacity>
-                    )}
-                </View>
-            )}
+                await scheduleEventReminder(event);
+                Alert.alert("Success", "Registered! (+10 Points)");
+            }
+        } catch (e) {
+            console.error("RSVP Error: ", e);
+            Alert.alert("Error", "Failed to update RSVP");
+        }
+    };
 
-            <View style={styles.metaRow}>
-                <View style={[styles.badge, { backgroundColor: theme.colors.secondary }]}>
-                    <Text style={styles.badgeText}>{event.category}</Text>
-                </View>
-                {event.isPaid ? (
-                    <View style={[styles.badge, { backgroundColor: '#ffe0b2' }]}>
-                        <Text style={styles.badgeText}>Paid: ₹{event.price}</Text>
-                    </View>
-                ) : (
-                    <View style={[styles.badge, { backgroundColor: '#c8e6c9' }]}>
-                         <Text style={styles.badgeText}>Free</Text>
-                    </View>
-                )}
-            </View>
+    const { request, response, promptAsync } = CalendarService.useCalendarAuth();
 
-            <Text style={styles.title}>{event.title}</Text>
-            
-            {/* Header Row: Info & Calendar Button */}
-            <View style={styles.headerRow}>
-                <View style={styles.headerInfoCol}>
-                    <View style={styles.infoRow}>
-                        <Ionicons name="location-outline" size={20} color={theme.colors.textSecondary} />
-                        <Text style={styles.infoText}>{event.location}</Text>
-                    </View>
-                    <View style={styles.infoRow}>
-                        <Ionicons name="time-outline" size={20} color={theme.colors.textSecondary} />
-                        <Text style={styles.infoText}>
-                            {new Date(event.startAt).toLocaleString()} 
-                            {event.endAt ? ` - ${new Date(event.endAt).toLocaleTimeString()}` : ''}
-                        </Text>
-                    </View>
-                </View>
+    useEffect(() => {
+        if (response?.type === 'success') {
+            const { access_token } = response.params;
+            CalendarService.addToCalendar(access_token, event)
+                .then(() => Alert.alert("Success", "Added to Google Calendar!"))
+                .catch(() => Alert.alert("Error", "Failed to add to calendar."));
+        }
+    }, [response]);
 
-                {/* Add to Calendar Button */}
-                {!isSuspended && (
-                    <TouchableOpacity 
-                        style={styles.calendarBtn} 
-                        onPress={handleAddToCalendar}
-                        disabled={!request}
-                    >
-                        <Ionicons name="calendar-outline" size={28} color={theme.colors.primary} />
-                        <Text style={styles.calendarBtnText}>Add</Text>
-                    </TouchableOpacity>
-                )}
-            </View>
+    const openLink = (url) => {
+        if (url) Linking.openURL(url).catch(() => Alert.alert("Error", "Invalid Link"));
+    };
 
-            {/* Target Audience */}
-            <View style={styles.targetSection}>
-                <Text style={styles.sectionHeader}>For:</Text>
-                <Text style={styles.targetText}>
-                    Dept: {event.target?.departments?.join(', ') || 'All'} • 
-                    Years: {event.target?.years?.join(', ') || 'All'}
-                </Text>
-            </View>
+    const handleExportReviews = async () => {
+        try {
+            const feedbackRef = collection(db, `events/${eventId}/feedback`);
+            const snapshot = await getDocs(feedbackRef);
 
-            <Text style={styles.description}>{event.description}</Text>
+            if (snapshot.empty) {
+                Alert.alert("No Reviews", "This event has no feedback yet.");
+                return;
+            }
 
-            {/* Mode & Meet Link */}
-            {event.eventMode === 'online' && (
-                <View style={{marginBottom: 20}}>
-                    <View style={styles.onlineBanner}>
-                         <Ionicons name="videocam" size={20} color="#fff" />
-                         <Text style={{color: '#fff', fontWeight: 'bold'}}>Online Event</Text>
-                    </View>
-                    
-                    {/* Show Join Button if Owner or Registered */}
-                    {(rsvpStatus === 'going' || isOwner) && event.meetLink ? (
-                        <TouchableOpacity 
-                            style={styles.joinBtn}
-                            onPress={() => openLink(event.meetLink)}
-                        >
-                            <Ionicons name="logo-google" size={24} color="#fff" />
-                            <Text style={styles.joinText}>Join Google Meet</Text>
-                        </TouchableOpacity>
-                    ) : (
-                        <Text style={{color: theme.colors.textSecondary, fontStyle: 'italic', marginTop: 5}}>
-                            {rsvpStatus === 'going' ? 'Link will be shared shortly.' : 'Register to get the meeting link.'}
-                        </Text>
-                    )}
-                </View>
-            )}
+            let csv = "User Name,Event Rating,Organizer Rating,Feedback,Date\n";
+            snapshot.forEach(doc => {
+                const d = doc.data();
+                const line = `\"${d.userName || 'Anonymous'}\",${d.eventRating || '-'}\",${d.clubRating || '-'}\",\"${(d.feedback || '').replace(/\"/g, '""')}\",${d.createdAt}\n`;
+                csv += line;
+            });
 
-            {/* Registration Link (External) */}
-            {event.registrationLink && !event.isPaid ? (
-                <TouchableOpacity onPress={() => openLink(event.registrationLink)} style={styles.linkBtn}>
-                    <Text style={styles.linkText}>🌐 Open Registration Page</Text>
-                </TouchableOpacity>
-            ) : null}
+            await Share.share({ message: csv, title: `Reviews - ${event.title}` });
 
-            {/* Actions */}
-            {!isSuspended && (
-                <View style={styles.actionRow}>
-                    <TouchableOpacity 
-                        style={[styles.rsvpBtn, rsvpStatus === 'going' && styles.rsvpBtnActive]} 
-                        onPress={toggleRsvp}
-                    >
-                        <Text style={[styles.rsvpText, rsvpStatus === 'going' && styles.rsvpTextActive]}>
-                            {rsvpStatus === 'going' ? 'Registered' : 'RSVP Now'}
-                        </Text>
-                    </TouchableOpacity>
-                    
-                    <TouchableOpacity style={styles.iconBtn} onPress={handleReminder}>
-                        <Ionicons name="alarm-outline" size={24} color={theme.colors.text} />
-                    </TouchableOpacity>
-                </View>
-            )}
+        } catch (error) {
+            console.error("Export Error: ", error);
+            Alert.alert("Error", "Failed to export reviews.");
+        }
+    };
 
-            <Text style={styles.participants}>
-                👥 {participantCount} people registered
-            </Text>
+    const handleFeedbackSubmit = async (data) => {
+        try {
+            await submitFeedback({
+                eventId: event.id,
+                clubId: event.ownerId,
+                userId: user.uid,
+                attended: true,
+                eventRating: data.eventRating,
+                clubRating: data.clubRating,
+                feedback: data.feedback
+            });
 
-            {/* Owner / Admin Tools */}
-            {(isOwner || isAdmin) && (
-                <View style={styles.ownerPanel}>
-                    <Text style={[styles.sectionHeader, { marginBottom: 10 }]}>Manage Event</Text>
-                    <View style={styles.actionRow}>
-                        <TouchableOpacity 
-                            style={[styles.actionBtn, { backgroundColor: theme.colors.primary }]}
-                            onPress={() => navigation.navigate('AttendanceDashboard', { eventId, eventTitle: event.title })}
-                        >
-                            <Ionicons name="stats-chart" size={20} color="#fff" />
-                            <Text style={styles.actionBtnText}>Analytics</Text>
-                        </TouchableOpacity>
+            setHasGivenFeedback(true);
+            Alert.alert("Thank You", "Feedback submitted!");
+        } catch (error) {
+            console.error(error);
+            Alert.alert("Error", "Failed to submit feedback");
+        }
+    };
 
-                        <TouchableOpacity 
-                            style={[styles.actionBtn, { backgroundColor: theme.colors.secondary }]}
-                            onPress={() => navigation.navigate('QRScanner', { eventId, eventTitle: event.title })}
-                        >
-                            <Ionicons name="qr-code" size={20} color="#000" />
-                            <Text style={[styles.actionBtnText, { color: '#000' }]}>Scan QR</Text>
-                        </TouchableOpacity>
-                    </View>
-                </View>
-            )}
-
-            {/* Admin Controls */}
-            {isAdmin && (
-                <View style={[styles.adminPanel, { backgroundColor: theme.colors.surface }]}>
-                    <Text style={[styles.adminHeader, { color: theme.colors.text }]}>Admin Controls</Text>
-                    {isSuspended ? (
-                        <TouchableOpacity style={styles.unsuspendBtn} onPress={handleUnsuspend}>
-                            <Text style={styles.unsuspendText}>Un-suspend Event</Text>
-                        </TouchableOpacity>
-                    ) : (
-                        <TouchableOpacity style={styles.suspendBtn} onPress={handleSuspend}>
-                            <Text style={styles.suspendText}>Suspend Event</Text>
-                        </TouchableOpacity>
-                    )}
-                </View>
-            )}
+    if (loading || !event) return (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+            <ActivityIndicator size="large" color={theme.colors.primary} />
         </View>
-      </ScrollView>
+    );
 
-      {/* Full Screen Image Modal */}
-      <Modal visible={modalVisible} transparent={true} animationType="fade">
-          <View style={styles.modalBg}>
-              <TouchableOpacity style={styles.closeBtn} onPress={() => setModalVisible(false)}>
-                  <Ionicons name="close-circle" size={40} color="#fff" />
-              </TouchableOpacity>
-              <Image 
-                  source={{ uri: event?.bannerUrl || 'https://via.placeholder.com/800x600' }} 
-                  style={styles.fullImage} 
-                  resizeMode="contain"
-              />
-          </View>
-      </Modal>
-    </ScreenWrapper>
-  );
+    return (
+        <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
+            <ScrollView bounces={false} showsVerticalScrollIndicator={false}>
+
+                {/* Immersive Header Image */}
+                <ImageBackground
+                    source={{ uri: event.bannerUrl || 'https://via.placeholder.com/800x600' }}
+                    style={styles.headerImage}
+                >
+                    <LinearGradient
+                        colors={['rgba(0,0,0,0.6)', 'transparent', 'rgba(0,0,0,0.8)']}
+                        style={styles.headerGradient}
+                    >
+                        <View style={styles.headerSafe}>
+                            <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+                                <Ionicons name="arrow-back" size={24} color="#fff" />
+                            </TouchableOpacity>
+
+                            <TouchableOpacity style={styles.bookmarkButton} onPress={toggleBookmark}>
+                                <Ionicons
+                                    name={isBookmarked ? "bookmark" : "bookmark-outline"}
+                                    size={24}
+                                    color="#fff"
+                                />
+                            </TouchableOpacity>
+                        </View>
+
+                        {/* Live Badge - only show when event is currently happening */}
+                        {(new Date() >= new Date(event.startAt) && new Date() <= new Date(event.endAt)) && (
+                            <View style={styles.liveBadge}>
+                                <Ionicons name="radio-button-on" size={14} color="#fff" />
+                                <Text style={styles.liveText}>LIVE</Text>
+                            </View>
+                        )}
+                    </LinearGradient>
+                </ImageBackground>
+
+                {/* Content Sheet */}
+                <View style={styles.contentSheet}>
+                    {/* Header Section */}
+                    <View style={styles.headerSection}>
+                        <View style={styles.badgeRow}>
+                            <View style={[styles.categoryBadge, { backgroundColor: theme.colors.primary + '20' }]}>
+                                <Text style={[styles.categoryText, { color: theme.colors.primary }]}>{event.category}</Text>
+                            </View>
+                            {event.isPaid ? (
+                                <View style={[styles.priceBadge, { backgroundColor: '#F59E0B' }]}>
+                                    <Ionicons name="cash" size={14} color="#fff" />
+                                    <Text style={styles.priceText}>₹{event.price}</Text>
+                                </View>
+                            ) : (
+                                <View style={[styles.priceBadge, { backgroundColor: '#F59E0B' }]}>
+                                    <Ionicons name="gift" size={14} color="#fff" />
+                                    <Text style={styles.priceText}>Free</Text>
+                                </View>
+                            )}
+                        </View>
+
+                        <Text style={[styles.eventTitle, { color: theme.colors.text }]}>{event.title}</Text>
+
+                        <TouchableOpacity
+                            style={styles.hostButton}
+                            onPress={() => navigation.navigate('ClubProfile', { clubId: event.ownerId, clubName: hostName })}
+                        >
+                            <View style={[styles.hostAvatar, { backgroundColor: theme.colors.primary + '20' }]}>
+                                <Text style={[styles.hostAvatarText, { color: theme.colors.primary }]}>
+                                    {hostName?.[0]?.toUpperCase()}
+                                </Text>
+                            </View>
+                            <View style={{ flex: 1 }}>
+                                <Text style={[styles.hostLabel, { color: theme.colors.textSecondary }]}>Hosted by</Text>
+                                <Text style={[styles.hostName, { color: theme.colors.text }]}>{hostName}</Text>
+                            </View>
+                            <Ionicons name="chevron-forward" size={20} color={theme.colors.textSecondary} />
+                        </TouchableOpacity>
+                    </View>
+
+                    {/* Quick Actions Row */}
+                    <View style={[styles.quickActionsCard, { backgroundColor: theme.colors.surface }]}>
+                        <TouchableOpacity style={styles.quickAction} onPress={toggleReminder}>
+                            <View style={[styles.quickActionIcon, { backgroundColor: reminderId ? theme.colors.primary : theme.colors.primary + '20' }]}>
+                                <Ionicons
+                                    name={reminderId ? "notifications" : "notifications-outline"}
+                                    size={20}
+                                    color={reminderId ? "#fff" : theme.colors.primary}
+                                />
+                            </View>
+                            <Text style={[styles.quickActionLabel, { color: theme.colors.text }]}>Remind</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity style={styles.quickAction} onPress={() => promptAsync()}>
+                            <View style={[styles.quickActionIcon, { backgroundColor: theme.colors.primary + '20' }]}>
+                                <Ionicons name="calendar-outline" size={20} color={theme.colors.primary} />
+                            </View>
+                            <Text style={[styles.quickActionLabel, { color: theme.colors.text }]}>Calendar</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity style={styles.quickAction} onPress={shareEvent}>
+                            <View style={[styles.quickActionIcon, { backgroundColor: theme.colors.primary + '20' }]}>
+                                <Ionicons name="share-social-outline" size={20} color={theme.colors.primary} />
+                            </View>
+                            <Text style={[styles.quickActionLabel, { color: theme.colors.text }]}>Share</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                            style={styles.quickAction}
+                            onPress={() => navigation.navigate('EventChat', { eventId: event.id, title: event.title })}
+                        >
+                            <View style={[styles.quickActionIcon, { backgroundColor: theme.colors.primary + '20' }]}>
+                                <Ionicons name="chatbubbles-outline" size={20} color={theme.colors.primary} />
+                            </View>
+                            <Text style={[styles.quickActionLabel, { color: theme.colors.text }]}>Chat</Text>
+                        </TouchableOpacity>
+                    </View>
+
+                    {/* Event Details Card */}
+                    <View style={[styles.detailsCard, { backgroundColor: theme.colors.surface }]}>
+                        <View style={styles.detailRow}>
+                            <View style={[styles.detailIconContainer, { backgroundColor: theme.colors.primary + '15' }]}>
+                                <Ionicons name="calendar" size={22} color={theme.colors.primary} />
+                            </View>
+                            <View style={styles.detailContent}>
+                                <Text style={[styles.detailLabel, { color: theme.colors.textSecondary }]}>Date & Time</Text>
+                                <Text style={[styles.detailValue, { color: theme.colors.text }]}>
+                                    {new Date(event.startAt).toLocaleDateString('en-US', {
+                                        weekday: 'short',
+                                        month: 'short',
+                                        day: 'numeric',
+                                        year: 'numeric'
+                                    })}
+                                </Text>
+                                <Text style={[styles.detailSubValue, { color: theme.colors.textSecondary }]}>
+                                    {new Date(event.startAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                </Text>
+                            </View>
+                        </View>
+
+                        <View style={[styles.detailDivider, { backgroundColor: theme.colors.border }]} />
+
+                        <View style={styles.detailRow}>
+                            <View style={[styles.detailIconContainer, { backgroundColor: theme.colors.primary + '15' }]}>
+                                <Ionicons name="location" size={22} color={theme.colors.primary} />
+                            </View>
+                            <View style={styles.detailContent}>
+                                <Text style={[styles.detailLabel, { color: theme.colors.textSecondary }]}>Location</Text>
+                                <Text style={[styles.detailValue, { color: theme.colors.text }]}>{event.location}</Text>
+                            </View>
+                        </View>
+                    </View>
+
+                    {/* About Section */}
+                    <View style={styles.aboutSection}>
+                        <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>About Event</Text>
+                        <Text style={[styles.description, { color: theme.colors.textSecondary }]}>{event.description}</Text>
+                    </View>
+
+                    {/* Meeting Link - Only for Attendees/Owner */}
+                    {(rsvpStatus === 'going' || isOwner) && event.meetLink && (
+                        <TouchableOpacity
+                            style={[styles.outlinedButton, { borderColor: theme.colors.primary }]}
+                            onPress={() => Linking.openURL(event.meetLink)}
+                        >
+                            <Ionicons name="videocam" size={22} color={theme.colors.primary} />
+                            <Text style={[styles.outlinedButtonText, { color: theme.colors.primary }]}>Join Virtual Meeting</Text>
+                        </TouchableOpacity>
+                    )}
+
+                    {/* Organizer Tools */}
+                    {isOwner && (
+                        <View style={styles.organizerSection}>
+                            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Organizer Tools</Text>
+
+                            <TouchableOpacity
+                                style={[styles.outlinedButton, { borderColor: theme.colors.primary, marginBottom: 12 }]}
+                                onPress={() => navigation.navigate('QRScanner', { eventId: event.id, eventTitle: event.title })}
+                            >
+                                <Ionicons name="qr-code" size={22} color={theme.colors.primary} />
+                                <Text style={[styles.outlinedButtonText, { color: theme.colors.primary }]}>Check-In</Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                                style={[styles.outlinedButton, { borderColor: theme.colors.primary }]}
+                                onPress={() => navigation.navigate('AttendanceDashboard', { eventId: event.id, eventTitle: event.title })}
+                            >
+                                <Ionicons name="bar-chart" size={22} color={theme.colors.primary} />
+                                <Text style={[styles.outlinedButtonText, { color: theme.colors.primary }]}>Analytics</Text>
+                            </TouchableOpacity>
+                        </View>
+                    )}
+
+                    {/* Feedback Button (Post Event) */}
+                    {rsvpStatus === 'going' && !isOwner && new Date(event.endAt) < new Date() && !isSuspended && (
+                        <TouchableOpacity
+                            style={[styles.feedbackCard, {
+                                backgroundColor: hasGivenFeedback ? theme.colors.surface : theme.colors.primary,
+                                borderWidth: hasGivenFeedback ? 1 : 0,
+                                borderColor: theme.colors.border
+                            }]}
+                            onPress={() => hasGivenFeedback ? Alert.alert("Done", "Feedback already sent.") : setShowFeedbackModal(true)}
+                        >
+                            <Ionicons
+                                name={hasGivenFeedback ? "checkmark-circle" : "star"}
+                                size={24}
+                                color={hasGivenFeedback ? theme.colors.primary : "#fff"}
+                            />
+                            <Text style={[styles.feedbackText, {
+                                color: hasGivenFeedback ? theme.colors.text : "#fff"
+                            }]}>
+                                {hasGivenFeedback ? "Feedback Submitted" : "Rate This Event"}
+                            </Text>
+                            {!hasGivenFeedback && <Ionicons name="arrow-forward" size={20} color="#fff" />}
+                        </TouchableOpacity>
+                    )}
+
+                    {/* Spacer for FAB */}
+                    <View style={{ height: 100 }} />
+                </View>
+            </ScrollView >
+
+            {/* Floating Action Bar (Bottom) */}
+            {
+                !isSuspended && (
+                    <View style={[styles.fabContainer, { backgroundColor: theme.colors.surface }]}>
+                        <View style={styles.fabSubInfo}>
+                            <Text style={styles.fabLabel}>Attending</Text>
+                            <Text style={styles.fabValue}>{participantCount} People</Text>
+                        </View>
+
+                        <TouchableOpacity
+                            style={[
+                                styles.primaryBtn,
+                                rsvpStatus === 'going' && styles.secondaryBtn,
+                                new Date(event.endAt) < new Date() && { backgroundColor: theme.colors.textSecondary, borderColor: theme.colors.textSecondary }
+                            ]}
+                            onPress={toggleRsvp}
+                            disabled={new Date(event.endAt) < new Date()}
+                        >
+                            <Text style={[styles.primaryBtnText, rsvpStatus === 'going' && styles.secondaryBtnText, new Date(event.endAt) < new Date() && { color: '#fff' }]}>
+                                {new Date(event.endAt) < new Date()
+                                    ? (rsvpStatus === 'going' ? 'Event Ended (Participated)' : 'Event Ended')
+                                    : (rsvpStatus === 'going' ? 'Registered ✓' : (event.isPaid ? `Book Ticket (₹${event.price})` : 'RSVP Now'))
+                                }
+                            </Text>
+                        </TouchableOpacity>
+                    </View>
+                )
+            }
+
+            <FeedbackModal
+                visible={showFeedbackModal}
+                onClose={() => setShowFeedbackModal(false)}
+                feedbackRequest={{
+                    eventTitle: event.title,
+                    clubName: event.organizerName || 'Organizer'
+                }}
+                onSubmit={handleFeedbackSubmit}
+            />
+
+        </View >
+    );
 }
 
 const getStyles = (theme) => StyleSheet.create({
-  banner: {
-      width: '100%',
-      height: 300, 
-      backgroundColor: theme.colors.surface, // Dynamic background
-  },
-  container: {
-      padding: theme.spacing.m,
-  },
-  warningBox: {
-      backgroundColor: '#ffebee', // Red tint safe for now, or theme.colors.surface + border
-      padding: 10,
-      marginBottom: 10,
-      borderRadius: 8,
-      borderWidth: 1,
-      borderColor: theme.colors.error,
-  },
-  warningText: {
-      color: theme.colors.error,
-      fontWeight: 'bold',
-  },
-  appealBtn: {
-      marginTop: 5,
-      alignSelf: 'flex-start',
-      borderBottomWidth: 1,
-      borderBottomColor: theme.colors.error,
-  },
-  appealText: {
-      color: theme.colors.error,
-      fontWeight: '600',
-  },
-  metaRow: {
-      flexDirection: 'row',
-      gap: 10,
-      marginBottom: 10,
-  },
-  badge: {
-      paddingHorizontal: 8,
-      paddingVertical: 4,
-      borderRadius: 4,
-  },
-  badgeText: {
-      fontSize: 12,
-      fontWeight: 'bold',
-      color: '#000',
-  },
-  title: {
-      ...theme.typography.h2,
-      marginBottom: 5,
-      color: theme.colors.text, 
-  },
-  infoRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 5,
-      marginBottom: 5,
-  },
-  infoText: {
-      fontSize: 14,
-      color: theme.colors.textSecondary,
-      flex: 1, // Allow text to wrap if needed
-  },
-  headerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start', // Align top in case text wraps
-    marginBottom: 5,
-  },
-  headerInfoCol: {
-      flex: 1,
-      marginRight: 10,
-  },
-  calendarBtn: {
-      alignItems: 'center',
-      justifyContent: 'center',
-      padding: 8,
-      backgroundColor: theme.colors.surface, // Or a light primary tint
-      borderRadius: 12,
-      borderWidth: 1,
-      borderColor: theme.colors.border,
-      ...theme.shadows.small,
-  },
-  calendarBtnText: {
-      fontSize: 10,
-      fontWeight: 'bold',
-      color: theme.colors.primary,
-      marginTop: 2,
-  },
-  targetSection: {
-      marginTop: 5,
-      marginBottom: 10,
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 5
-  },
-  sectionHeader: { fontWeight: 'bold', color: theme.colors.text },
-  targetText: { color: theme.colors.textSecondary },
-  description: {
-      fontSize: 16,
-      lineHeight: 24,
-      color: theme.colors.text,
-      marginVertical: 15,
-  },
-  linkBtn: {
-      padding: 12,
-      backgroundColor: theme.colors.surface,
-      borderWidth: 1,
-      borderColor: theme.colors.primary,
-      borderRadius: 8,
-      alignItems: 'center',
-      marginBottom: 20,
-  },
-  linkText: { color: theme.colors.primary, fontWeight: 'bold' },
-  actionRow: {
-      flexDirection: 'row',
-      gap: 10,
-      alignItems: 'center',
-  },
-  rsvpBtn: {
-      flex: 1,
-      backgroundColor: theme.colors.primary,
-      padding: 15,
-      borderRadius: 8,
-      alignItems: 'center',
-  },
-  rsvpBtnActive: {
-      backgroundColor: theme.colors.success,
-  },
-  rsvpText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
-  rsvpTextActive: { color: '#fff' },
-  iconBtn: {
-      padding: 12,
-      backgroundColor: theme.colors.surface,
-      borderRadius: 8,
-      borderWidth: 1,
-      borderColor: theme.colors.border,
-  },
-  participants: {
-      marginTop: 15,
-      color: theme.colors.textSecondary,
-      fontStyle: 'italic',
-  },
-  adminPanel: {
-      marginTop: 30,
-      padding: 15,
-      // backgroundColor removed here, applied inline dynamically
-      borderRadius: 8,
-  },
-  adminHeader: { fontWeight: 'bold', marginBottom: 10 },
-  suspendBtn: {
-      backgroundColor: theme.colors.error,
-      padding: 12,
-      borderRadius: 8,
-      alignItems: 'center',
-  },
-  suspendText: { color: '#fff', fontWeight: 'bold' },
-  unsuspendBtn: {
-      backgroundColor: theme.colors.success,
-      padding: 12,
-      borderRadius: 8,
-      alignItems: 'center',
-  },
-  unsuspendText: { color: '#fff', fontWeight: 'bold' },
-  modalBg: {
-      flex: 1,
-      backgroundColor: 'rgba(0,0,0,0.9)',
-      justifyContent: 'center',
-      alignItems: 'center',
-  },
-  fullImage: {
-      width: '100%',
-      height: '80%',
-  },
-  closeBtn: {
-      position: 'absolute',
-      top: 50,
-      right: 20,
-      zIndex: 10,
-  },
-  onlineBanner: {
-      backgroundColor: theme.colors.primary,
-      padding: 10,
-      borderRadius: 8,
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 8,
-      marginBottom: 10,
-  },
-  joinBtn: {
-      backgroundColor: '#00796b', // Teal for Meet
-      padding: 15,
-      borderRadius: 8,
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      gap: 10,
-      ...theme.shadows.default,
-  },
-  joinText: {
-      color: '#fff',
-      fontWeight: 'bold',
-      fontSize: 18,
-  },
-  ownerPanel: {
-      marginBottom: 20,
-      padding: 15,
-      backgroundColor: 'rgba(0,0,0,0.03)',
-      borderRadius: 12,
-      borderWidth: 1,
-      borderColor: 'rgba(0,0,0,0.1)'
-  },
-  actionBtn: {
-      flex: 1,
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      padding: 12,
-      borderRadius: 8,
-      gap: 8,
-  },
-  actionBtnText: {
-      fontWeight: 'bold',
-      color: '#fff',
-  }
+    // Header
+    headerImage: { height: 350, width: '100%' },
+    headerGradient: { flex: 1, paddingTop: 40, paddingHorizontal: 20 },
+    headerSafe: { flexDirection: 'row', justifyContent: 'space-between' },
+    backButton: {
+        width: 40, height: 40, borderRadius: 20,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        alignItems: 'center', justifyContent: 'center',
+        ...theme.shadows.small
+    },
+    bookmarkButton: {
+        width: 40, height: 40, borderRadius: 20,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        alignItems: 'center', justifyContent: 'center',
+        ...theme.shadows.small
+    },
+    liveBadge: {
+        flexDirection: 'row', alignItems: 'center', gap: 6,
+        backgroundColor: '#FF3B30', paddingHorizontal: 12, paddingVertical: 6,
+        borderRadius: 20,
+        position: 'absolute',
+        top: 20,
+        left: 20,
+    },
+    liveText: { color: '#fff', fontSize: 12, fontWeight: 'bold' },
+
+    // Content Sheet
+    contentSheet: {
+        marginTop: -40,
+        backgroundColor: theme.colors.background,
+        borderTopLeftRadius: 30,
+        borderTopRightRadius: 30,
+        paddingHorizontal: 20,
+        paddingTop: 24,
+    },
+
+    // Header Section
+    headerSection: {
+        marginBottom: 20,
+    },
+    badgeRow: {
+        flexDirection: 'row',
+        gap: 8,
+        marginBottom: 16,
+    },
+    categoryBadge: {
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 20,
+    },
+    categoryText: {
+        fontSize: 12,
+        fontWeight: '600',
+    },
+    priceBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 20,
+    },
+    priceText: {
+        color: '#fff',
+        fontSize: 12,
+        fontWeight: '700',
+    },
+    eventTitle: {
+        fontSize: 28,
+        fontWeight: '800',
+        marginBottom: 16,
+        lineHeight: 34,
+    },
+    hostButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+        paddingVertical: 12,
+    },
+    hostAvatar: {
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    hostAvatarText: {
+        fontSize: 18,
+        fontWeight: '700',
+    },
+    hostLabel: {
+        fontSize: 12,
+    },
+    hostName: {
+        fontSize: 16,
+        fontWeight: '600',
+    },
+
+    // Quick Actions
+    quickActionsCard: {
+        flexDirection: 'row',
+        justifyContent: 'space-around',
+        padding: 16,
+        borderRadius: 20,
+        marginBottom: 20,
+        ...theme.shadows.small,
+    },
+    quickAction: {
+        alignItems: 'center',
+        gap: 8,
+    },
+    quickActionIcon: {
+        width: 48,
+        height: 48,
+        borderRadius: 24,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    quickActionLabel: {
+        fontSize: 12,
+        fontWeight: '500',
+    },
+
+    // Details Card
+    detailsCard: {
+        borderRadius: 20,
+        padding: 20,
+        marginBottom: 20,
+        ...theme.shadows.small,
+    },
+    detailRow: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        gap: 16,
+    },
+    detailIconContainer: {
+        width: 48,
+        height: 48,
+        borderRadius: 24,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    detailContent: {
+        flex: 1,
+    },
+    detailLabel: {
+        fontSize: 12,
+        fontWeight: '500',
+        marginBottom: 4,
+    },
+    detailValue: {
+        fontSize: 16,
+        fontWeight: '600',
+        marginBottom: 2,
+    },
+    detailSubValue: {
+        fontSize: 14,
+    },
+    detailDivider: {
+        height: 1,
+        marginVertical: 16,
+    },
+
+    // About Section
+    aboutSection: {
+        marginBottom: 20,
+    },
+    sectionTitle: {
+        fontSize: 20,
+        fontWeight: '700',
+        marginBottom: 12,
+    },
+    description: {
+        fontSize: 15,
+        lineHeight: 24,
+    },
+
+    // Outlined Button (for Virtual Meeting, Check-In, Analytics)
+    outlinedButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 12,
+        paddingVertical: 16,
+        paddingHorizontal: 24,
+        borderRadius: 14,
+        borderWidth: 2,
+        marginBottom: 14,
+        backgroundColor: theme.colors.surface,
+        ...theme.shadows.small,
+    },
+    outlinedButtonText: {
+        fontSize: 16,
+        fontWeight: '700',
+    },
+
+    // Meet Link Card
+    meetLinkCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: 14,
+        paddingHorizontal: 16,
+        borderRadius: 14,
+        marginBottom: 20,
+        gap: 12,
+        ...theme.shadows.default,
+    },
+    meetLinkIcon: {
+        width: 36,
+        height: 36,
+        borderRadius: 10,
+        backgroundColor: 'rgba(255,255,255,0.2)',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    meetLinkTitle: {
+        color: '#fff',
+        fontSize: 14,
+        fontWeight: '700',
+        marginBottom: 2,
+    },
+    meetLinkSubtitle: {
+        color: 'rgba(255,255,255,0.85)',
+        fontSize: 11,
+    },
+
+    // Organizer Section
+    organizerSection: {
+        marginBottom: 20,
+    },
+    organizerGrid: {
+        flexDirection: 'row',
+        gap: 10,
+    },
+    organizerCard: {
+        flex: 1,
+        padding: 16,
+        paddingVertical: 18,
+        borderRadius: 14,
+        alignItems: 'center',
+        ...theme.shadows.small,
+        justifyContent: 'center',
+    },
+    organizerIconBg: {
+        width: 44,
+        height: 44,
+        borderRadius: 12,
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginBottom: 10,
+    },
+    organizerCardTitle: {
+        fontSize: 15,
+        fontWeight: '700',
+        marginBottom: 4,
+    },
+    organizerCardDesc: {
+        fontSize: 12,
+        textAlign: 'center',
+        opacity: 0.7,
+    },
+
+    // Feedback Card
+    feedbackCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 18,
+        borderRadius: 20,
+        gap: 12,
+        marginBottom: 20,
+        ...theme.shadows.default,
+    },
+    feedbackText: {
+        fontSize: 16,
+        fontWeight: '700',
+        flex: 1,
+    },
+
+    // FAB
+    fabContainer: {
+        position: 'absolute', bottom: 0, left: 0, right: 0,
+        padding: 20, paddingBottom: 30,
+        borderTopWidth: 1, borderTopColor: theme.colors.border,
+        flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+        ...theme.shadows.large,
+    },
+    fabSubInfo: { justifyContent: 'center' },
+    fabLabel: { fontSize: 12, color: theme.colors.textSecondary },
+    fabValue: { fontSize: 16, fontWeight: 'bold', color: theme.colors.text },
+    primaryBtn: {
+        backgroundColor: theme.colors.primary,
+        paddingVertical: 14, paddingHorizontal: 32,
+        borderRadius: 12,
+        ...theme.shadows.default,
+    },
+    secondaryBtn: { backgroundColor: theme.colors.surface, borderWidth: 2, borderColor: theme.colors.primary },
+    primaryBtnText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
+    secondaryBtnText: { color: theme.colors.primary },
 });
