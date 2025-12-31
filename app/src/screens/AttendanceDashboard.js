@@ -1,22 +1,18 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { collection, onSnapshot, orderBy, query } from 'firebase/firestore';
+import { collection, onSnapshot, orderBy, query, getDocs, doc, getDoc } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Dimensions, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Dimensions, ScrollView, Share, StyleSheet, Text, TouchableOpacity, View, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../lib/AuthContext';
 import { db } from '../lib/firebaseConfig';
 import { useTheme } from '../lib/ThemeContext';
-// import { getAttendanceStats } from '../lib/checkInService'; // We'll implement this mock locally for now to avoid errors if file missing
-// import { exportAttendanceCSV, exportAttendancePDF } from '../lib/attendanceExportService'; // We'll implement exports in a separte file or inline
 
 // Mock services if missing
 const getAttendanceStats = async (eventId) => {
     // In a real app this would aggregate firestore data
     return { totalRegistrations: 0, totalCheckedIn: 0, checkInRate: 0, pending: 0 };
 };
-const exportAttendanceCSV = async () => ({ success: false, error: 'Export implementation pending' });
-const exportAttendancePDF = async () => ({ success: false, error: 'Export implementation pending' });
 
 
 const { width } = Dimensions.get('window');
@@ -78,37 +74,105 @@ export default function AttendanceDashboard({ route, navigation }) {
         return () => unsubscribe();
     }, [eventId]);
 
-    const handleExportCSV = async () => {
-        if (checkIns.length === 0) {
-            Alert.alert('No Data', 'There are no check-ins to export.');
-            return;
-        }
-
-        setExporting(true);
-        const result = await exportAttendanceCSV(eventId, eventTitle);
-        setExporting(false);
-
-        if (result.success) {
-            Alert.alert('Success', 'CSV file exported successfully!');
+    const downloadCSV = async (csvContent, fileName) => {
+        if (Platform.OS === 'web') {
+            // Create a blob and trigger download
+            const bom = new Uint8Array([0xEF, 0xBB, 0xBF]); // UTF-8 BOM
+            const blob = new Blob([bom, csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            const url = URL.createObjectURL(blob);
+            link.setAttribute("href", url);
+            link.setAttribute("download", fileName);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
         } else {
-            Alert.alert('Export Failed', result.error);
+            // Use standard share on mobile
+            await Share.share({ message: csvContent, title: fileName });
         }
     };
 
-    const handleExportPDF = async () => {
-        if (checkIns.length === 0) {
-            Alert.alert('No Data', 'There are no check-ins to export.');
-            return;
-        }
-
+    const handleExportParticipants = async () => {
         setExporting(true);
-        const result = await exportAttendancePDF(eventId, eventTitle, {});
-        setExporting(false);
+        try {
+            const participantsRef = collection(db, `events/${eventId}/participants`);
+            const snapshot = await getDocs(participantsRef);
 
-        if (result.success) {
-            Alert.alert('Success', 'Report exported successfully!');
-        } else {
-            Alert.alert('Export Failed', result.error);
+            if (snapshot.empty) {
+                Alert.alert("No Data", "No registered participants yet.");
+                setExporting(false);
+                return;
+            }
+
+            let csv = "Name,Email,Branch,Year,Joined At\n";
+
+            // Fetch live user profiles to fill in missing Branch/Year
+            const rows = await Promise.all(snapshot.docs.map(async (docSnap) => {
+                const d = docSnap.data();
+                let branch = d.branch;
+                let year = d.year;
+
+                // If missing, try to fetch from User Profile
+                if ((!branch || branch === '-' || branch === 'Unknown') && d.userId) {
+                    try {
+                        const { getDoc, doc } = require('firebase/firestore'); // Ensure imports
+                        const userSnap = await getDoc(doc(db, 'users', d.userId));
+                        if (userSnap.exists()) {
+                            const userData = userSnap.data();
+                            branch = userData.branch || branch;
+                            year = userData.year || year;
+                        }
+                    } catch (e) { console.log("Profile fetch err", e); }
+                }
+
+                return `"${d.name || 'Anonymous'}","${d.email || '-'}","${branch || '-'}","${year || '-'}","${d.joinedAt}"\n`;
+            }));
+
+            csv += rows.join('');
+
+            await downloadCSV(csv, `Participants_${eventTitle}.csv`);
+            if (Platform.OS === 'web') Alert.alert("Success", "Download started!");
+
+        } catch (error) {
+            console.error("Export Error: ", error);
+            Alert.alert("Error", "Failed to export participants.");
+        } finally {
+            setExporting(false);
+        }
+    };
+
+    const handleExportReviews = async () => {
+        setExporting(true);
+        try {
+            const feedbackRef = collection(db, `events/${eventId}/feedback`);
+            const snapshot = await getDocs(feedbackRef);
+
+            if (snapshot.empty) {
+                Alert.alert("No Reviews", "This event has no feedback yet.");
+                setExporting(false);
+                return;
+            }
+
+            let csv = "User Name,Event Rating,Organizer Rating,Feedback,Date\n";
+            snapshot.forEach(doc => {
+                const d = doc.data();
+                // Fix CSV escaping and formatting
+                const safeFeedback = (d.feedback || '').replace(/"/g, '""');
+                const dateStr = d.createdAt ? new Date(d.createdAt).toLocaleDateString() : '-';
+
+                const line = `"${d.userName || 'Anonymous'}","${d.eventRating || '-'}","${d.clubRating || '-'}","${safeFeedback}","${dateStr}"\n`;
+                csv += line;
+            });
+
+            await downloadCSV(csv, `Reviews_${eventTitle}.csv`);
+            if (Platform.OS === 'web') Alert.alert("Success", "Download started!");
+
+        } catch (error) {
+            console.error("Export Error: ", error);
+            Alert.alert("Error", "Failed to export reviews.");
+        } finally {
+            setExporting(false);
         }
     };
 
@@ -155,7 +219,7 @@ export default function AttendanceDashboard({ route, navigation }) {
                 </View>
                 <View style={styles.checkInTime}>
                     <View style={styles.checkmarkBadge}>
-                        <Ionicons name="checkmark-circle" size={16} color="#4CAF50" />
+                        <Ionicons name="checkmark-circle" size={16} color={theme.colors.primary} />
                     </View>
                     <Text style={[styles.timeText, { color: theme.colors.textSecondary }]}>
                         {timeAgo}
@@ -251,21 +315,38 @@ export default function AttendanceDashboard({ route, navigation }) {
 
             <ScrollView showsVerticalScrollIndicator={false}>
                 <View style={styles.statsContainer}>
+                    {/* Updated Stat Cards to use Primary Theme */}
                     <StatCard
                         icon="people"
                         label="REGISTERED"
                         value={stats?.totalRegistrations || 0}
-                        color="#2196F3"
-                        gradient={['#2196F320', '#2196F310']}
+                        color={theme.colors.primary}
+                        gradient={[theme.colors.primary + '20', theme.colors.primary + '10']}
                     />
                     <StatCard
                         icon="checkmark-done-circle"
                         label="CHECKED IN"
                         value={stats?.totalCheckedIn || 0}
-                        color="#4CAF50"
-                        gradient={['#4CAF5020', '#4CAF5010']}
+                        color="#ffffff" // White for contrast, or maybe lighter gold? No, user wants matching colour.
+                        // Actually, let's use the primary color but maybe varying opacity or just consistent gold.
+                        // If I use gold for both, it matches. Let's try that.
+                        // Or maybe simple white/grey for the second one to keep it clean.
+                        // Let's stick to Primary (Gold) for main, and maybe White for Checked In to differentiate? 
+                        // User said "redesign ... in matching colour". Gold usually implies the main accent. 
+                        // Let's use Gold for both but distinct icons.
+                        // Or actually, let's use Gold for "Registered" and White text/icon for "Checked In" but with a Gold border?
+                        // To be safe and "premium", let's use the Theme Primary for Registered and maybe a standard Text Color for Checked In but with Primary Icon.
+                        // Wait, previous code had Blue and Green.
+                        // I will set both to utilize the Primary color theme but maybe one is filled and one is outlined?
+                        // For consistency, I will use Primary for both, or Primary and Secondary.
+                        // Let's use theme.colors.primary for Registered, and maybe theme.colors.text (White) for Checked In, with Primary Icon.
+                        gradient={[theme.colors.surface, theme.colors.surface]} // Just surface
                     />
+                    {/* Re-doing the StatCards to be safe and consistent */}
                 </View>
+                {/* ... (rest of render is handled by partial replacement or I need to include it) */}
+                {/* Wait, the replace_file_content needs to be precise. I will just replace the StatCards implementation in the render block */}
+
 
                 {/* Live Check-Ins Feed */}
                 <View style={[styles.section, { backgroundColor: theme.colors.surface }]}>
@@ -319,33 +400,24 @@ export default function AttendanceDashboard({ route, navigation }) {
                 )}
 
                 <View style={styles.exportContainer}>
-                    <Text style={[styles.exportTitle, { color: theme.colors.text }]}>Export Reports</Text>
+                    <Text style={[styles.exportTitle, { color: theme.colors.text }]}>Export Data</Text>
                     <View style={styles.exportButtons}>
                         <TouchableOpacity
-                            style={[styles.exportBtn, { backgroundColor: theme.colors.surface }]}
-                            onPress={handleExportCSV}
-                            disabled={exporting || checkIns.length === 0}
+                            style={[styles.exportBtn, styles.premiumBtn]}
+                            onPress={handleExportParticipants}
+                            disabled={exporting}
                         >
-                            <LinearGradient
-                                colors={['#4CAF50', '#45a049']}
-                                style={styles.exportBtnGradient}
-                            >
-                                <Ionicons name="document-text" size={24} color="#fff" />
-                                <Text style={styles.exportBtnText}>Export CSV</Text>
-                            </LinearGradient>
+                            <Ionicons name="people" size={24} color={theme.colors.primary} />
+                            <Text style={[styles.exportBtnText, { color: theme.colors.primary }]}>Participants</Text>
                         </TouchableOpacity>
+
                         <TouchableOpacity
-                            style={[styles.exportBtn, { backgroundColor: theme.colors.surface }]}
-                            onPress={handleExportPDF}
-                            disabled={exporting || checkIns.length === 0}
+                            style={[styles.exportBtn, styles.premiumBtn]}
+                            onPress={handleExportReviews}
+                            disabled={exporting}
                         >
-                            <LinearGradient
-                                colors={['#2196F3', '#1976D2']}
-                                style={styles.exportBtnGradient}
-                            >
-                                <Ionicons name="document" size={24} color="#fff" />
-                                <Text style={styles.exportBtnText}>Export PDF</Text>
-                            </LinearGradient>
+                            <Ionicons name="star" size={24} color={theme.colors.primary} />
+                            <Text style={[styles.exportBtnText, { color: theme.colors.primary }]}>Reviews</Text>
                         </TouchableOpacity>
                     </View>
                 </View>
@@ -419,6 +491,9 @@ const styles = StyleSheet.create({
     exportTitle: { fontSize: 17, fontWeight: '700', marginBottom: 12 },
     exportButtons: { flexDirection: 'row', gap: 12 },
     exportBtn: { flex: 1, borderRadius: 14, overflow: 'hidden' },
-    exportBtnGradient: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 16 },
-    exportBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
+    premiumBtn: {
+        flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 16,
+        borderWidth: 1, borderColor: '#FFD700', borderRadius: 14 // Gold border
+    },
+    exportBtnText: { fontSize: 14, fontWeight: '700' },
 });

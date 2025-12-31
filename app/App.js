@@ -21,6 +21,14 @@ import ProfileScreen from './src/screens/ProfileScreen';
 import QRScannerScreen from './src/screens/QRScannerScreen';
 import RemindersScreen from './src/screens/RemindersScreen';
 import UserFeed from './src/screens/UserFeed';
+import AppearanceScreen from './src/screens/AppearanceScreen';
+import ClubProfileScreen from './src/screens/ClubProfileScreen';
+import EventChatScreen from './src/screens/EventChatScreen';
+import PaymentScreen from './src/screens/PaymentScreen';
+import TicketScreen from './src/screens/TicketScreen';
+import WalletScreen from './src/screens/WalletScreen';
+import MyRegisteredEventsScreen from './src/screens/MyRegisteredEventsScreen';
+import SavedEventsScreen from './src/screens/SavedEventsScreen';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -33,32 +41,32 @@ function HomeScreen({ navigation }) {
 
   useEffect(() => {
     const updateNavBar = async () => {
-        // Set Android Navigation Bar Color
-        await NavigationBar.setBackgroundColorAsync(theme.colors.surface);
-        await NavigationBar.setButtonStyleAsync(isDarkMode ? 'light' : 'dark');
+      // Set Android Navigation Bar Color
+      await NavigationBar.setBackgroundColorAsync(theme.colors.surface);
+      await NavigationBar.setButtonStyleAsync(isDarkMode ? 'light' : 'dark');
     };
     updateNavBar();
   }, [theme, isDarkMode]);
-  
+
   const welcomeContent = (
     <View style={{ marginBottom: theme.spacing.m }}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginTop: theme.spacing.m }}>
-          <View style={styles.userInfo}>
-                <Text style={[theme.typography.h2, { color: theme.colors.text }]}>Welcome,</Text>
-                <Text style={[theme.typography.h3, { color: theme.colors.text }]} numberOfLines={1}>
-                  {user?.displayName || 'User'}
-                </Text>
-                <View style={[styles.badge, { backgroundColor: theme.colors.secondary }]}>
-                  <Text style={styles.badgeText}>{role?.toUpperCase() || 'STUDENT'}</Text>
-                </View>
+        <View style={styles.userInfo}>
+          <Text style={[theme.typography.h2, { color: theme.colors.text }]}>Welcome,</Text>
+          <Text style={[theme.typography.h3, { color: theme.colors.text }]} numberOfLines={1}>
+            {user?.displayName || 'User'}
+          </Text>
+          <View style={[styles.badge, { backgroundColor: theme.colors.secondary }]}>
+            <Text style={styles.badgeText}>{role?.toUpperCase() || 'STUDENT'}</Text>
           </View>
-          <NotificationBell />
+        </View>
+        <NotificationBell />
       </View>
-      
+
       <View style={[styles.actionContainer, { marginBottom: theme.spacing.m, marginTop: theme.spacing.s }]}>
         {(role === 'admin' || role === 'club') && (
-          <TouchableOpacity 
-            style={[styles.primaryButton, { backgroundColor: theme.colors.primary, ...theme.shadows.default }]} 
+          <TouchableOpacity
+            style={[styles.primaryButton, { backgroundColor: theme.colors.primary, ...theme.shadows.default }]}
             onPress={() => navigation.navigate('CreateEvent')}
           >
             <Text style={theme.typography.button}>+ Create Event</Text>
@@ -82,66 +90,66 @@ import CustomTabBar from './src/components/CustomTabBar';
 import LeaderboardScreen from './src/screens/LeaderboardScreen';
 
 function TabNavigator() {
-    const { role } = useAuth();
-    const { theme } = useTheme();
-    
-    return (
-        <Tab.Navigator
-            tabBar={(props) => <CustomTabBar {...props} />}
-            screenOptions={{
-                headerShown: false,
-                tabBarStyle: {
-                   position: 'absolute', // Required for BlurView transparency to see content behind
-                   backgroundColor: 'transparent',
-                   elevation: 0,
-                   borderTopWidth: 0,
-                }
-            }}
-        >
-            <Tab.Screen 
-                name="Home" 
-                component={HomeScreen} 
-                options={{ title: 'Home' }} 
-            />
-            
-            {/* Admin Tab: Control Panel (Admin Only) */}
-            {role === 'admin' && (
-                <Tab.Screen 
-                    name="Admin" 
-                    component={AdminDashboard} 
-                    options={{ title: 'Control' }} 
-                />
-            )}
+  const { role } = useAuth();
+  const { theme } = useTheme();
 
-            {/* My Events Tab: For Admin & Club */}
-            {(role === 'admin' || role === 'club') && (
-                <Tab.Screen 
-                    name="MyEvents" 
-                    component={MyEventsScreen} 
-                    options={{ title: 'My Events' }} 
-                />
-            )}
+  return (
+    <Tab.Navigator
+      tabBar={(props) => <CustomTabBar {...props} />}
+      screenOptions={{
+        headerShown: false,
+        tabBarStyle: {
+          position: 'absolute', // Required for BlurView transparency to see content behind
+          backgroundColor: 'transparent',
+          elevation: 0,
+          borderTopWidth: 0,
+        }
+      }}
+    >
+      <Tab.Screen
+        name="Home"
+        component={HomeScreen}
+        options={{ title: 'Home' }}
+      />
 
-            <Tab.Screen 
-                name="Reminders" 
-                component={RemindersScreen} 
-                options={{ title: 'Reminders' }} 
-            />
+      {/* Admin Tab: Control Panel (Admin Only) */}
+      {role === 'admin' && (
+        <Tab.Screen
+          name="Admin"
+          component={AdminDashboard}
+          options={{ title: 'Control' }}
+        />
+      )}
 
-            {/* Leaderboard for everyone or students */}
-            <Tab.Screen 
-                 name="Leaderboard" 
-                 component={LeaderboardScreen} 
-                 options={{ title: 'Rankings' }} 
-            />
-            
-            <Tab.Screen 
-                name="Profile" 
-                component={ProfileScreen} 
-                options={{ title: 'Profile' }} 
-            />
-        </Tab.Navigator>
-    );
+      {/* My Events Tab: For Admin & Club */}
+      {(role === 'admin' || role === 'club') && (
+        <Tab.Screen
+          name="MyEvents"
+          component={MyEventsScreen}
+          options={{ title: 'My Events' }}
+        />
+      )}
+
+      <Tab.Screen
+        name="Reminders"
+        component={RemindersScreen}
+        options={{ title: 'Reminders' }}
+      />
+
+      {/* Leaderboard for everyone or students */}
+      <Tab.Screen
+        name="Leaderboard"
+        component={LeaderboardScreen}
+        options={{ title: 'Rankings' }}
+      />
+
+      <Tab.Screen
+        name="Profile"
+        component={ProfileScreen}
+        options={{ title: 'Profile' }}
+      />
+    </Tab.Navigator>
+  );
 }
 
 function Navigation() {
@@ -153,7 +161,7 @@ function Navigation() {
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: theme.colors.background }}>
         <ActivityIndicator size="large" color={theme.colors.primary} />
         <Text style={{ marginTop: 20, color: theme.colors.textSecondary, fontSize: 16 }}>
-             Please wait...
+          Please wait...
         </Text>
       </View>
     );
@@ -186,6 +194,16 @@ function Navigation() {
             <Stack.Screen name="EventAnalytics" component={EventAnalytics} options={{ title: 'Analytics' }} />
             <Stack.Screen name="AttendanceDashboard" component={AttendanceDashboard} options={{ title: 'Attendance', headerShown: false }} />
             <Stack.Screen name="QRScanner" component={QRScannerScreen} options={{ title: 'Scan QR', headerShown: false }} />
+
+            {/* Migrated Screens */}
+            <Stack.Screen name="Appearance" component={AppearanceScreen} options={{ title: 'Appearance' }} />
+            <Stack.Screen name="ClubProfile" component={ClubProfileScreen} options={{ headerShown: false }} />
+            <Stack.Screen name="EventChat" component={EventChatScreen} options={{ headerShown: false }} />
+            <Stack.Screen name="Payment" component={PaymentScreen} options={{ headerShown: false }} />
+            <Stack.Screen name="TicketScreen" component={TicketScreen} options={{ headerShown: false }} />
+            <Stack.Screen name="Wallet" component={WalletScreen} options={{ headerShown: false }} />
+            <Stack.Screen name="MyRegisteredEvents" component={MyRegisteredEventsScreen} options={{ title: 'My Calendar' }} />
+            <Stack.Screen name="SavedEvents" component={SavedEventsScreen} options={{ title: 'Saved Events' }} />
           </>
         ) : (
           <Stack.Screen name="Auth" component={AuthScreen} options={{ headerShown: false }} />
@@ -208,8 +226,8 @@ export default function App() {
     <SafeAreaProvider>
       <ThemeProvider>
         <AuthProvider>
-            <AppContent />
-            <PWAInstallPrompt />
+          <AppContent />
+          <PWAInstallPrompt />
         </AuthProvider>
       </ThemeProvider>
     </SafeAreaProvider>
@@ -217,38 +235,38 @@ export default function App() {
 }
 
 function AppContent() {
-    const { user } = useAuth();
-    const notificationListener = useRef();
-    const responseListener = useRef();
+  const { user } = useAuth();
+  const notificationListener = useRef();
+  const responseListener = useRef();
 
-    useEffect(() => {
-        registerForPushNotificationsAsync().then(token => {
-            if (user && token) {
-                // Save token to user profile
-                updateDoc(doc(db, 'users', user.uid), {
-                    pushToken: token
-                }).catch(err => console.log("Failed to save push token", err));
-            }
-        });
+  useEffect(() => {
+    registerForPushNotificationsAsync().then(token => {
+      if (user && token) {
+        // Save token to user profile
+        updateDoc(doc(db, 'users', user.uid), {
+          pushToken: token
+        }).catch(err => console.log("Failed to save push token", err));
+      }
+    });
 
-        // Listeners for foreground notifications
-        notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
-            console.log("Notification Received:", notification);
-        });
+    // Listeners for foreground notifications
+    notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
+      console.log("Notification Received:", notification);
+    });
 
-        // Listeners for user interacting with notification
-        responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
-            console.log("Notification Tapped:", response);
-            // Could navigate to event detail here
-        });
+    // Listeners for user interacting with notification
+    responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
+      console.log("Notification Tapped:", response);
+      // Could navigate to event detail here
+    });
 
-        return () => {
-             if (notificationListener.current) Notifications.removeNotificationSubscription(notificationListener.current);
-             if (responseListener.current) Notifications.removeNotificationSubscription(responseListener.current);
-        };
-    }, [user]);
+    return () => {
+      if (notificationListener.current) Notifications.removeNotificationSubscription(notificationListener.current);
+      if (responseListener.current) Notifications.removeNotificationSubscription(responseListener.current);
+    };
+  }, [user]);
 
-    return <Navigation />;
+  return <Navigation />;
 }
 
 const styles = StyleSheet.create({

@@ -1,17 +1,18 @@
 import { Ionicons } from '@expo/vector-icons';
-import { collection, deleteDoc, doc, getDocs, query, where } from 'firebase/firestore';
+import { collection, deleteDoc, doc, getDocs, query, where, getDoc } from 'firebase/firestore';
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, Image, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import ScreenWrapper from '../components/ScreenWrapper';
 import { useAuth } from '../lib/AuthContext';
 import { db } from '../lib/firebaseConfig';
+import { cancelScheduledNotification } from '../lib/notificationService';
 import { useTheme } from '../lib/ThemeContext';
 
 export default function RemindersScreen({ navigation }) {
     const { user } = useAuth();
     const { theme, isDarkMode } = useTheme();
     const styles = useMemo(() => getStyles(theme, isDarkMode), [theme, isDarkMode]);
-    
+
     const [reminders, setReminders] = useState([]);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
@@ -30,25 +31,26 @@ export default function RemindersScreen({ navigation }) {
             );
             const snapshot = await getDocs(q);
             const list = [];
-            const { getDoc } = require('firebase/firestore');
-            
+
             // Parallel fetch for speed
             await Promise.all(snapshot.docs.map(async (docSnap) => {
                 const data = docSnap.data();
                 let eventTitle = 'Unknown Event';
                 let eventLocation = '';
+                let bannerUrl = null;
                 try {
                     const eventDoc = await getDoc(doc(db, 'events', data.eventId));
                     if (eventDoc.exists()) {
                         const ed = eventDoc.data();
                         eventTitle = ed.title;
                         eventLocation = ed.location;
+                        bannerUrl = ed.bannerUrl;
                     }
                 } catch (e) { console.log(e) }
 
-                list.push({ id: docSnap.id, eventTitle, eventLocation, ...data });
+                list.push({ id: docSnap.id, eventTitle, eventLocation, bannerUrl, ...data });
             }));
-            
+
             // Sort by remindAt
             list.sort((a, b) => {
                 const da = a.remindAt?.toDate ? a.remindAt.toDate() : new Date(a.remindAt);
@@ -65,17 +67,28 @@ export default function RemindersScreen({ navigation }) {
         }
     };
 
-    const handleDelete = async (id) => {
+    const handleDelete = async (item) => {
         Alert.alert("Remove Reminder", "Are you sure?", [
             { text: "Cancel", style: "cancel" },
-            { text: "Remove", style: "destructive", onPress: async () => {
-                try {
-                    await deleteDoc(doc(db, 'reminders', id));
-                    setReminders(prev => prev.filter(item => item.id !== id));
-                } catch (error) {
-                    Alert.alert("Error", "Could not delete reminder.");
+            {
+                text: "Remove", style: "destructive", onPress: async () => {
+                    try {
+                        console.log("Deleting reminder:", item.id);
+                        if (item.notificationId) {
+                            console.log("Cancelling notification:", item.notificationId);
+                            await cancelScheduledNotification(item.notificationId);
+                        }
+                        console.log("Deleting from Firestore...");
+                        await deleteDoc(doc(db, 'reminders', item.id));
+                        console.log("Updating local state...");
+                        setReminders(prev => prev.filter(r => r.id !== item.id));
+                        console.log("Reminder deleted successfully");
+                    } catch (error) {
+                        console.error("Delete error:", error);
+                        Alert.alert("Error", `Could not delete reminder: ${error.message}`);
+                    }
                 }
-            }}
+            }
         ]);
     };
 
@@ -87,10 +100,10 @@ export default function RemindersScreen({ navigation }) {
         const diffHrs = Math.round(diffMs / 3600000);
         const diffDays = Math.round(diffMs / 86400000);
 
-        if (diffMs < 0) return "Started";
-        if (diffMins < 60) return `Starts in ${diffMins} mins`;
-        if (diffHrs < 24) return `Starts in ${diffHrs} hours`;
-        return `Starts in ${diffDays} days`;
+        if (diffMs < 0) return "Passed";
+        if (diffMins < 60) return `${diffMins}m remaining`;
+        if (diffHrs < 24) return `${diffHrs}h remaining`;
+        return `${diffDays}d remaining`;
     };
 
     return (
@@ -103,54 +116,58 @@ export default function RemindersScreen({ navigation }) {
             </View>
 
             {loading && !refreshing ? (
-                <ActivityIndicator size="large" color={theme.colors.primary} style={{marginTop: 50}} />
+                <ActivityIndicator size="large" color={theme.colors.primary} style={{ marginTop: 50 }} />
             ) : (
                 <FlatList
                     data={reminders}
                     keyExtractor={item => item.id}
                     refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchReminders(); }} />}
                     renderItem={({ item }) => {
-                         const dateObj = item.remindAt?.toDate ? item.remindAt.toDate() : new Date(item.remindAt);
-                         return (
-                            <TouchableOpacity 
-                                style={styles.card} 
+                        const dateObj = item.remindAt?.toDate ? item.remindAt.toDate() : new Date(item.remindAt);
+                        return (
+                            <TouchableOpacity
+                                style={styles.card}
                                 onPress={() => navigation.navigate('EventDetail', { eventId: item.eventId })}
                             >
-                                <View style={styles.cardStripe} />
+                                <Image
+                                    source={{ uri: item.bannerUrl || 'https://via.placeholder.com/150' }}
+                                    style={styles.cardImage}
+                                />
                                 <View style={styles.cardContent}>
                                     <View style={styles.cardHeader}>
                                         <Text style={styles.eventTitle} numberOfLines={1}>{item.eventTitle}</Text>
-                                        <View style={styles.timeBadge}>
-                                            <Text style={styles.timeBadgeText}>{getRelativeTime(item.remindAt)}</Text>
-                                        </View>
+                                        <TouchableOpacity onPress={() => handleDelete(item)}>
+                                            <Ionicons name="trash-outline" size={20} color={theme.colors.error} />
+                                        </TouchableOpacity>
                                     </View>
-                                    
+
                                     <View style={styles.row}>
-                                        <Ionicons name="calendar-outline" size={16} color={theme.colors.textSecondary} />
-                                        <Text style={styles.dateText}>{dateObj.toLocaleString()}</Text>
+                                        <Ionicons name="time-outline" size={14} color={theme.colors.textSecondary} />
+                                        <Text style={styles.dateText}>
+                                            {dateObj.toLocaleDateString()} • {dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                        </Text>
                                     </View>
-                                    {item.eventLocation ? (
-                                        <View style={styles.row}>
-                                            <Ionicons name="location-outline" size={16} color={theme.colors.textSecondary} />
-                                            <Text style={styles.locationText}>{item.eventLocation}</Text>
+
+                                    <View style={styles.timerContainer}>
+                                        <View style={styles.timerBadge}>
+                                            <Ionicons name="alarm" size={12} color={theme.colors.primary} />
+                                            <Text style={styles.timerText}>{getRelativeTime(item.remindAt)}</Text>
                                         </View>
-                                    ) : null}
+                                    </View>
                                 </View>
-                                
-                                <TouchableOpacity style={styles.deleteBtn} onPress={() => handleDelete(item.id)}>
-                                    <Ionicons name="trash-outline" size={20} color={theme.colors.error} />
-                                </TouchableOpacity>
                             </TouchableOpacity>
                         );
                     }}
                     ListEmptyComponent={
                         <View style={styles.emptyContainer}>
-                            <Ionicons name="alarm-outline" size={60} color={theme.colors.textSecondary} />
-                            <Text style={styles.emptyText}>No upcoming reminders</Text>
-                            <Text style={styles.emptySubText}>RSVP to events to set reminders automatically.</Text>
+                            <View style={styles.emptyIconCircle}>
+                                <Ionicons name="notifications-off-outline" size={40} color={theme.colors.textSecondary} />
+                            </View>
+                            <Text style={styles.emptyText}>No reminders set</Text>
+                            <Text style={styles.emptySubText}>Tap the bell icon on any event to get notified.</Text>
                         </View>
                     }
-                    contentContainerStyle={{ paddingBottom: 20 }}
+                    contentContainerStyle={{ paddingBottom: 20, paddingHorizontal: 4 }}
                 />
             )}
         </ScreenWrapper>
@@ -159,94 +176,52 @@ export default function RemindersScreen({ navigation }) {
 
 const getStyles = (theme, isDarkMode) => StyleSheet.create({
     headerContainer: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: theme.spacing.m,
-        paddingHorizontal: theme.spacing.s,
+        flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+        marginBottom: theme.spacing.m, paddingHorizontal: theme.spacing.s,
     },
-    header: {
-        ...theme.typography.h2,
-        color: theme.colors.text,
-    },
-    refreshBtn: {
-        padding: 8,
-    },
+    header: { ...theme.typography.h2, color: theme.colors.text },
+    refreshBtn: { padding: 8 },
+
     card: {
         backgroundColor: theme.colors.surface,
-        borderRadius: 12,
-        marginBottom: theme.spacing.m,
+        borderRadius: 16,
+        marginBottom: 16,
         flexDirection: 'row',
-        overflow: 'hidden',
         ...theme.shadows.small,
-        elevation: 3, 
+        elevation: 2,
+        padding: 12,
+        alignItems: 'center',
+        gap: 12
     },
-    cardStripe: {
-        width: 6,
-        backgroundColor: theme.colors.primary,
+    cardImage: {
+        width: 80, height: 80, borderRadius: 12, backgroundColor: theme.colors.border
     },
-    cardContent: {
-        flex: 1,
-        padding: 15,
-    },
+    cardContent: { flex: 1, justifyContent: 'center' },
     cardHeader: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'flex-start',
-        marginBottom: 8,
+        flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4
     },
     eventTitle: {
-        fontSize: 18,
-        fontWeight: 'bold',
-        color: theme.colors.text,
-        flex: 1,
-        marginRight: 10,
-    },
-    timeBadge: {
-        backgroundColor: isDarkMode ? '#333' : '#e3f2fd', 
-        paddingHorizontal: 8,
-        paddingVertical: 4,
-        borderRadius: 10,
-    },
-    timeBadgeText: {
-        fontSize: 10,
-        color: theme.colors.primary,
-        fontWeight: 'bold',
+        fontSize: 16, fontWeight: '700', color: theme.colors.text, flex: 1, marginRight: 8
     },
     row: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 6,
-        marginBottom: 4,
+        flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8
     },
-    dateText: {
-        color: theme.colors.textSecondary,
-        fontSize: 14,
+    dateText: { color: theme.colors.textSecondary, fontSize: 13 },
+
+    timerContainer: { flexDirection: 'row' },
+    timerBadge: {
+        flexDirection: 'row', alignItems: 'center', gap: 4,
+        backgroundColor: isDarkMode ? 'rgba(var(--primary-rgb), 0.15)' : '#E3F2FD',
+        paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8
     },
-    locationText: {
-        color: theme.colors.textSecondary,
-        fontSize: 14,
+    timerText: { fontSize: 12, fontWeight: '600', color: theme.colors.primary },
+
+    emptyContainer: { alignItems: 'center', marginTop: 80 },
+    emptyIconCircle: {
+        width: 80, height: 80, borderRadius: 40, backgroundColor: theme.colors.surface,
+        justifyContent: 'center', alignItems: 'center', marginBottom: 16,
+        ...theme.shadows.small
     },
-    deleteBtn: {
-        justifyContent: 'center',
-        paddingHorizontal: 15,
-        backgroundColor: isDarkMode ? '#3e2723' : '#fff0f0', 
-        borderLeftWidth: 1,
-        borderLeftColor: isDarkMode ? '#5d4037' : '#ffcdd2',
-    },
-    emptyContainer: {
-        alignItems: 'center',
-        marginTop: 60,
-    },
-    emptyText: {
-        fontSize: 18,
-        fontWeight: 'bold',
-        color: theme.colors.textSecondary,
-        marginTop: 10,
-    },
-    emptySubText: {
-        color: theme.colors.textSecondary,
-        marginTop: 5,
-        fontSize: 14,
-    }
+    emptyText: { fontSize: 18, fontWeight: 'bold', color: theme.colors.text },
+    emptySubText: { color: theme.colors.textSecondary, marginTop: 8 }
 });

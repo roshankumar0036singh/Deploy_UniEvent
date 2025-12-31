@@ -7,7 +7,6 @@ import ScreenWrapper from '../components/ScreenWrapper';
 import { useAuth } from '../lib/AuthContext';
 import { useTheme } from '../lib/ThemeContext';
 import { db } from '../lib/firebaseConfig';
-import { theme as staticTheme } from '../lib/theme';
 
 export default function MyEventsScreen({ navigation }) {
     const { user } = useAuth();
@@ -19,7 +18,7 @@ export default function MyEventsScreen({ navigation }) {
         if (!user) return;
 
         const q = query(
-            collection(db, 'events'), 
+            collection(db, 'events'),
             where('ownerId', '==', user.uid)
         );
 
@@ -46,9 +45,9 @@ export default function MyEventsScreen({ navigation }) {
             "Are you sure? This cannot be undone.",
             [
                 { text: "Cancel", style: "cancel" },
-                { 
-                    text: "Delete", 
-                    style: "destructive", 
+                {
+                    text: "Delete",
+                    style: "destructive",
                     onPress: async () => {
                         try {
                             await deleteDoc(doc(db, 'events', eventId));
@@ -61,105 +60,158 @@ export default function MyEventsScreen({ navigation }) {
         );
     };
 
-    if (loading) return <View style={[styles.center, {backgroundColor: theme.colors.background}]}><ActivityIndicator color={theme.colors.primary} /></View>;
+    const renderItem = ({ item }) => (
+        <View style={styles.cardContainer}>
+            <EventCard event={item} onPress={() => navigation.navigate('EventDetail', { eventId: item.id })} />
+
+            <View style={[styles.actionBar, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+                {/* Status */}
+                <View style={styles.statusContainer}>
+                    <View style={[styles.dot, { backgroundColor: item.status === 'suspended' ? theme.colors.error : theme.colors.success }]} />
+                    <Text style={[styles.statusText, { color: theme.colors.text }]}>
+                        {item.status === 'suspended' ? 'SUSPENDED' : 'Active'}
+                    </Text>
+                </View>
+
+                {/* Actions */}
+                <View style={styles.actions}>
+                    <TouchableOpacity
+                        style={[styles.actionBtn, { backgroundColor: theme.colors.primary + '15' }]}
+                        onPress={() => navigation.navigate('EventAnalytics', { eventId: item.id })}
+                    >
+                        <Ionicons name="bar-chart" size={18} color={theme.colors.primary} />
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                        style={[styles.actionBtn, { backgroundColor: theme.colors.error + '15' }]}
+                        onPress={() => handleDelete(item.id)}
+                    >
+                        <Ionicons name="trash-outline" size={18} color={theme.colors.error} />
+                    </TouchableOpacity>
+                </View>
+            </View>
+        </View>
+    );
+
+    if (loading) return (
+        <ScreenWrapper>
+            <View style={styles.center}>
+                <ActivityIndicator size="large" color={theme.colors.primary} />
+            </View>
+        </ScreenWrapper>
+    );
 
     return (
         <ScreenWrapper>
-             <View style={styles.header}>
-                <TouchableOpacity onPress={() => navigation.goBack()} style={{padding: 5}}>
-                     <Ionicons name="arrow-back" size={24} color={theme.colors.text} />
-                </TouchableOpacity>
-                <Text style={[theme.typography.h2, { color: theme.colors.text }]}>My Events</Text>
-             </View>
+            <View style={styles.header}>
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+                        <Ionicons name="arrow-back" size={24} color={theme.colors.text} />
+                    </TouchableOpacity>
+                    <Text style={[styles.title, { color: theme.colors.text }]}>My Events</Text>
+                </View>
 
-             <FlatList
+                <TouchableOpacity
+                    onPress={() => navigation.navigate('CreateEvent')}
+                    style={{ padding: 5 }}
+                >
+                    <Ionicons name="add-circle" size={32} color={theme.colors.primary} />
+                </TouchableOpacity>
+            </View>
+
+            <FlatList
                 data={events}
                 keyExtractor={item => item.id}
-                contentContainerStyle={{ padding: staticTheme.spacing.m }}
-                ListEmptyComponent={<Text style={[styles.empty, { color: theme.colors.textSecondary }]}>You haven't created any events.</Text>}
-                renderItem={({ item }) => (
-                    <View>
-                        <EventCard event={item} />
-                        <View style={styles.actionRow}>
-                             {/* Status Indicator */}
-                             <View style={{flexDirection: 'row', alignItems: 'center', gap: 5}}>
-                                 <View style={[styles.dot, { backgroundColor: item.status === 'suspended' ? theme.colors.error : theme.colors.success }]} />
-                                 <Text style={[
-                                        styles.status, 
-                                        { color: theme.colors.text }
-                                    ]}>
-                                        {item.status === 'suspended' ? 'SUSPENDED' : 'Active'}
-                                 </Text>
-                             </View>
-
-                             {/* Action Buttons */}
-                             <View style={{flexDirection: 'row', gap: 10}}>
-                                <TouchableOpacity 
-                                    style={[styles.btn, { backgroundColor: theme.colors.primary }]}
-                                    onPress={() => navigation.navigate('EventAnalytics', { eventId: item.id })}
-                                >
-                                    <Ionicons name="bar-chart" size={16} color="#000" />
-                                    <Text style={styles.btnText}>Analytics</Text>
-                                </TouchableOpacity>
-
-                                <TouchableOpacity 
-                                    style={[styles.btn, { backgroundColor: '#ffebee', borderWidth: 1, borderColor: '#ffcdd2' }]}
-                                    onPress={() => handleDelete(item.id)}
-                                >
-                                    <Ionicons name="trash-outline" size={16} color={theme.colors.error} />
-                                </TouchableOpacity>
-                             </View>
-                        </View>
-                        {item.status === 'suspended' && (
-                            <Text style={{ color: theme.colors.error, fontSize: 12, marginLeft: 15, marginBottom: 15, marginTop: -10 }}>
-                                ⚠️ This event is not visible to students.
-                            </Text>
-                        )}
+                contentContainerStyle={styles.list}
+                ListEmptyComponent={
+                    <View style={styles.emptyContainer}>
+                        <Ionicons name="calendar-outline" size={64} color={theme.colors.textSecondary} />
+                        <Text style={[styles.emptyText, { color: theme.colors.textSecondary }]}>
+                            You haven't created any events yet.
+                        </Text>
+                        <TouchableOpacity
+                            style={[styles.createBtnSmall, { backgroundColor: theme.colors.primary }]}
+                            onPress={() => navigation.navigate('CreateEvent')}
+                        >
+                            <Text style={styles.createBtnText}>Create Layout</Text>
+                        </TouchableOpacity>
                     </View>
-                )}
-             />
+                }
+                renderItem={renderItem}
+            />
+
+            {/* Floating Action Button */}
+            <TouchableOpacity
+                style={[styles.fab, { backgroundColor: theme.colors.primary, shadowColor: theme.colors.primary }]}
+                onPress={() => navigation.navigate('CreateEvent')}
+            >
+                <Ionicons name="add" size={32} color="#fff" />
+            </TouchableOpacity>
         </ScreenWrapper>
     );
 }
 
 const styles = StyleSheet.create({
     center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-    header: { 
-        flexDirection: 'row', 
-        alignItems: 'center', 
-        paddingHorizontal: staticTheme.spacing.s, 
-        marginBottom: staticTheme.spacing.m,
-        gap: 10
+    header: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingHorizontal: 20,
+        paddingTop: 20,
+        paddingBottom: 10,
     },
-    empty: { textAlign: 'center', marginTop: 50 },
-    actionRow: {
+    backBtn: { marginRight: 15 },
+    title: { fontSize: 28, fontWeight: 'bold' },
+    list: { padding: 20, paddingBottom: 100 }, // Extra padding for FAB
+    cardContainer: { marginBottom: 20 },
+    actionBar: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        paddingHorizontal: 10,
-        paddingVertical: 10,
-        marginBottom: 15,
-        backgroundColor: 'rgba(0,0,0,0.02)',
-        borderRadius: 8,
+        padding: 12,
+        borderBottomLeftRadius: 16,
+        borderBottomRightRadius: 16,
+        borderTopWidth: 0,
+        borderWidth: 1,
+        marginTop: -10, // Overlap roughly with card bottom
+        zIndex: -1,
+        paddingTop: 15, // Compensate for overlap
     },
-    status: {
-        fontSize: 14,
-        fontWeight: '600',
-    },
-    dot: {
-        width: 8, height: 8, borderRadius: 4
-    },
-    btn: {
-        flexDirection: 'row',
+    statusContainer: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+    dot: { width: 8, height: 8, borderRadius: 4 },
+    statusText: { fontWeight: '600', fontSize: 14 },
+    actions: { flexDirection: 'row', gap: 10 },
+    actionBtn: {
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        justifyContent: 'center',
         alignItems: 'center',
-        gap: 5,
-        paddingHorizontal: 12,
-        paddingVertical: 8,
-        borderRadius: 8,
     },
-    btnText: {
-        color: '#000',
-        fontWeight: 'bold',
-        fontSize: 12,
+    emptyContainer: { alignItems: 'center', marginTop: 80, gap: 15 },
+    emptyText: { fontSize: 16 },
+    createBtnSmall: {
+        paddingHorizontal: 20,
+        paddingVertical: 12,
+        borderRadius: 25,
+        marginTop: 10,
+    },
+    createBtnText: { color: '#fff', fontWeight: 'bold' },
+    fab: {
+        position: 'absolute',
+        bottom: 30,
+        right: 20,
+        width: 60,
+        height: 60,
+        borderRadius: 30,
+        justifyContent: 'center',
+        alignItems: 'center',
+        elevation: 5,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 5,
     }
 });
+
+

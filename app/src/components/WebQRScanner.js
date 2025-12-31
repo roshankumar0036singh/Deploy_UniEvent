@@ -10,16 +10,16 @@ export default function WebQRScanner({ onScan, style }) {
         let html5QrCode;
 
         const startScanner = async () => {
-             // Dynamic import to avoid issues on native
+            // Dynamic import to avoid issues on native
             try {
                 const { Html5Qrcode } = require('html5-qrcode');
                 html5QrCode = new Html5Qrcode("reader");
-                
+
                 await html5QrCode.start(
                     { facingMode: "environment" },
                     {
                         fps: 10,
-                        qrbox: { width: 250, height: 250 }
+                        // qrbox: { width: 250, height: 250 } // Commented out to prevent default library overlay brackets
                     },
                     (decodedText, decodedResult) => {
                         onScan(decodedText);
@@ -40,7 +40,7 @@ export default function WebQRScanner({ onScan, style }) {
 
         return () => {
             if (html5QrCode) {
-                 html5QrCode.stop().catch(err => console.error(err));
+                html5QrCode.stop().catch(err => console.error(err));
             }
         };
     }, []);

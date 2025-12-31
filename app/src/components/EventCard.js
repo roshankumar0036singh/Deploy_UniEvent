@@ -1,130 +1,149 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { doc, getDoc } from 'firebase/firestore';
+import { useEffect, useState } from 'react';
 import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { db } from '../lib/firebaseConfig';
 import { useTheme } from '../lib/ThemeContext';
 import { theme } from '../lib/theme';
 
 export default function EventCard({ event, onLike, onShare, isLiked = false, isRegistered = false }) {
-  const navigation = useNavigation();
-  const { theme } = useTheme();
+    const navigation = useNavigation();
+    const { theme } = useTheme();
+    const [hostName, setHostName] = useState(event?.organization || 'Club Name');
 
-  if (!event) return null;
+    useEffect(() => {
+        if (event?.ownerId) {
+            getDoc(doc(db, 'users', event.ownerId)).then(snap => {
+                if (snap.exists()) {
+                    setHostName(snap.data().displayName || event.organization || 'Club Name');
+                }
+            });
+        }
+    }, [event?.ownerId]);
 
-  const dateObj = new Date(event.startAt);
-  
-  // Format Date: "OCT 15"
-  const month = dateObj.toLocaleString('default', { month: 'short' }).toUpperCase();
-  const day = dateObj.getDate();
-  
-  // Format Time: "7 PM"
-  const time = dateObj.toLocaleString('default', { hour: 'numeric', minute: '2-digit', hour12: true });
+    if (!event) return null;
 
-  // Fallback for second image if not present in data
-  const flyerUrl = event.detailImageUrl || event.bannerUrl || 'https://via.placeholder.com/400x400';
+    const dateObj = new Date(event.startAt);
 
-  return (
-    <TouchableOpacity 
-      style={[styles.card, { backgroundColor: theme.colors.surface, ...theme.shadows.default }]}
-      activeOpacity={0.9}
-      onPress={() => navigation.navigate('EventDetail', { eventId: event.id })}
-    >
-        {/* 1. MAIN BANNER IMAGE (Top Layer) */}
-        <View style={styles.bannerContainer}>
-            <Image 
-                source={{ uri: event.bannerUrl || 'https://via.placeholder.com/800x400' }} 
-                style={styles.bannerImage}
-                resizeMode="cover"
-            />
-            <LinearGradient
-                colors={['transparent', 'rgba(0,0,0,0.4)']}
-                style={StyleSheet.absoluteFillObject}
-            />
-            {/* Category Tag on Banner */}
-            <View style={[styles.categoryBadge, { backgroundColor: theme.colors.surface }]}>
-                <Text style={[styles.categoryText, { color: theme.colors.text }]}>{event.category}</Text>
-            </View>
-            
-            {/* Online Badge */}
-            {event.eventMode === 'online' && (
-                <View style={[styles.onlineBadge, { backgroundColor: theme.colors.error }]}>
-                     <Ionicons name="videocam" size={12} color="#fff" />
-                     <Text style={styles.onlineText}>LIVE</Text>
-                </View>
-            )}
-        </View>
+    // Format Date: "OCT 15"
+    const month = dateObj.toLocaleString('default', { month: 'short' }).toUpperCase();
+    const day = dateObj.getDate();
 
-        {/* 2. CONTENT CONTAINER */}
-        <View style={styles.contentContainer}>
-            
-            {/* FLYER IMAGE (Overlapping) */}
-            <View style={[styles.flyerContainer, { borderColor: theme.colors.surface, ...theme.shadows.default }]}>
-                <Image 
-                    source={{ uri: flyerUrl }} 
-                    style={styles.flyerImage}
-                    resizeMode="cover" 
+    // Format Time: "7 PM"
+    const time = dateObj.toLocaleString('default', { hour: 'numeric', minute: '2-digit', hour12: true });
+
+    // Fallback for second image if not present in data
+    const flyerUrl = event.detailImageUrl || event.bannerUrl || 'https://via.placeholder.com/400x400';
+
+    return (
+        <TouchableOpacity
+            style={[styles.card, { backgroundColor: theme.colors.surface, ...theme.shadows.default }]}
+            activeOpacity={0.9}
+            onPress={() => navigation.navigate('EventDetail', { eventId: event.id })}
+        >
+            {/* 1. MAIN BANNER IMAGE (Top Layer) */}
+            <View style={styles.bannerContainer}>
+                <Image
+                    source={{ uri: event.bannerUrl || 'https://via.placeholder.com/800x400' }}
+                    style={styles.bannerImage}
+                    resizeMode="cover"
                 />
-            </View>
+                <LinearGradient
+                    colors={['transparent', 'rgba(0,0,0,0.4)']}
+                    style={StyleSheet.absoluteFillObject}
+                />
+                {/* Category Tag on Banner */}
+                <View style={[styles.categoryBadge, { backgroundColor: theme.colors.surface }]}>
+                    <Text style={[styles.categoryText, { color: theme.colors.text }]}>{event.category}</Text>
+                </View>
 
-            {/* HEADER INFO (Right of Flyer) */}
-            <View style={styles.headerInfo}>
-                <Text style={[styles.title, { color: theme.colors.text }]} numberOfLines={2}>
-                    {event.title}
-                </Text>
-                <Text style={[styles.host, { color: theme.colors.secondary }]}>
-                    Hosted by {event.organization || 'Club Name'}
-                </Text>
-            </View>
-
-            {/* DETAILS ROW (Below Flyer) */}
-            <View style={styles.detailsRow}>
-                {/* Date & Location */}
-                <View style={styles.infoBlock}>
-                    <View style={styles.infoItem}>
-                         <Ionicons name="calendar" size={16} color={theme.colors.textSecondary} />
-                         <Text style={[styles.infoText, { color: theme.colors.textSecondary }]}>
-                            {month} {day} • {time}
-                         </Text>
+                {/* Live / Online Badge */}
+                {(new Date() >= new Date(event.startAt) && new Date() <= new Date(event.endAt)) ? (
+                    <View style={[styles.onlineBadge, { backgroundColor: theme.colors.error }]}>
+                        <Ionicons name="radio-button-on" size={12} color="#fff" />
+                        <Text style={styles.onlineText}>LIVE</Text>
                     </View>
-                    <View style={styles.infoItem}>
-                         <Ionicons name="location" size={16} color={theme.colors.textSecondary} />
-                         <Text style={[styles.infoText, { color: theme.colors.textSecondary }]} numberOfLines={1}>
-                            {event.location}
-                         </Text>
+                ) : event.eventMode === 'online' ? (
+                    <View style={[styles.onlineBadge, { backgroundColor: theme.colors.primary }]}>
+                        <Ionicons name="videocam" size={12} color="#fff" />
+                        <Text style={styles.onlineText}>ONLINE</Text>
+                    </View>
+                ) : null}
+            </View>
+
+            {/* 2. CONTENT CONTAINER */}
+            <View style={styles.contentContainer}>
+
+                {/* FLYER IMAGE (Overlapping) */}
+                <View style={[styles.flyerContainer, { borderColor: theme.colors.surface, ...theme.shadows.default }]}>
+                    <Image
+                        source={{ uri: flyerUrl }}
+                        style={styles.flyerImage}
+                        resizeMode="cover"
+                    />
+                </View>
+
+                {/* HEADER INFO (Right of Flyer) */}
+                <View style={styles.headerInfo}>
+                    <Text style={[styles.title, { color: theme.colors.text }]} numberOfLines={2}>
+                        {event.title}
+                    </Text>
+                    <Text style={[styles.host, { color: theme.colors.secondary }]}>
+                        Hosted by {hostName}
+                    </Text>
+                </View>
+
+                {/* DETAILS ROW (Below Flyer) */}
+                <View style={styles.detailsRow}>
+                    {/* Date & Location */}
+                    <View style={styles.infoBlock}>
+                        <View style={styles.infoItem}>
+                            <Ionicons name="calendar" size={16} color={theme.colors.textSecondary} />
+                            <Text style={[styles.infoText, { color: theme.colors.textSecondary }]}>
+                                {month} {day} • {time}
+                            </Text>
+                        </View>
+                        <View style={styles.infoItem}>
+                            <Ionicons name="location" size={16} color={theme.colors.textSecondary} />
+                            <Text style={[styles.infoText, { color: theme.colors.textSecondary }]} numberOfLines={1}>
+                                {event.location}
+                            </Text>
+                        </View>
+                    </View>
+
+                    {/* Price Badge */}
+                    <View style={[styles.priceBadge, { backgroundColor: theme.colors.secondary }]}>
+                        <Text style={styles.priceText}>
+                            {event.isPaid ? `₹${event.price}` : 'FREE'}
+                        </Text>
                     </View>
                 </View>
 
-                {/* Price Badge */}
-                <View style={[styles.priceBadge, { backgroundColor: theme.colors.secondary }]}>
-                     <Text style={styles.priceText}>
-                        {event.isPaid ? `₹${event.price}` : 'FREE'}
-                     </Text>
-                </View>
+                {/* FOOTER ACTION */}
+                {isRegistered ? (
+                    <View style={[styles.registerBtn, { backgroundColor: theme.colors.success, ...theme.shadows.default }]}>
+                        <Ionicons name="checkmark-circle" size={16} color="#fff" style={{ marginRight: 4 }} />
+                        <Text style={styles.registerText}>REGISTERED</Text>
+                    </View>
+                ) : (
+                    <TouchableOpacity
+                        style={[styles.registerBtn, { backgroundColor: theme.colors.primary, ...theme.shadows.default }]}
+                        onPress={() => navigation.navigate('EventDetail', { eventId: event.id })}
+                    >
+                        <Text style={styles.registerText}>REGISTER</Text>
+                    </TouchableOpacity>
+                )}
+
             </View>
-
-            {/* FOOTER ACTION */}
-            {isRegistered ? (
-                 <View style={[styles.registerBtn, { backgroundColor: theme.colors.success, ...theme.shadows.default }]}>
-                    <Ionicons name="checkmark-circle" size={16} color="#fff" style={{marginRight: 4}}/>
-                    <Text style={styles.registerText}>REGISTERED</Text>
-                </View>
-            ) : (
-                <TouchableOpacity 
-                    style={[styles.registerBtn, { backgroundColor: theme.colors.primary, ...theme.shadows.default }]}
-                    onPress={() => navigation.navigate('EventDetail', { eventId: event.id })}
-                >
-                    <Text style={styles.registerText}>REGISTER</Text>
-                </TouchableOpacity>
-            )}
-
-        </View>
-    </TouchableOpacity>
-  );
+        </TouchableOpacity>
+    );
 }
 
 const styles = StyleSheet.create({
     card: {
-        borderRadius: 10, // Squared off for full width look or minimal radius
+        borderRadius: 16, // Softer
         marginBottom: 24,
         overflow: 'visible',
         marginHorizontal: 0, // Full width - removed reference to potential parent padding if any
@@ -135,13 +154,13 @@ const styles = StyleSheet.create({
         width: '100%',
         overflow: 'hidden',
         position: 'relative',
-        borderRadius: 10,
+        borderRadius: 16,
 
     },
     bannerImage: {
         width: '100%',
         height: '100%',
-        borderRadius: 10,
+        borderRadius: 16,
     },
     categoryBadge: {
         position: 'absolute',
@@ -149,7 +168,7 @@ const styles = StyleSheet.create({
         right: 16,
         paddingHorizontal: 12,
         paddingVertical: 6,
-        borderRadius: 4,
+        borderRadius: 20, // Pill
         ...theme.shadows.small,
     },
     categoryText: {
@@ -162,9 +181,9 @@ const styles = StyleSheet.create({
         position: 'absolute',
         top: 16,
         left: 16,
-        paddingHorizontal: 8,
-        paddingVertical: 4,
-        borderRadius: 4,
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        borderRadius: 20, // Pill
         flexDirection: 'row',
         alignItems: 'center',
         gap: 4,
@@ -176,16 +195,16 @@ const styles = StyleSheet.create({
         fontSize: 10,
     },
     contentContainer: {
-        paddingHorizontal: 16, // Reduced side padding for content
+        paddingHorizontal: 16,
         paddingBottom: 20,
-        paddingTop: 0, 
+        paddingTop: 0,
     },
     flyerContainer: {
         width: 100,
         height: 100,
-        borderRadius: 12,
+        borderRadius: 20, // Sleeker curve
         borderWidth: 4,
-        marginTop: -50, 
+        marginTop: -50,
         overflow: 'hidden',
     },
     flyerImage: {
@@ -193,18 +212,18 @@ const styles = StyleSheet.create({
         height: '100%',
     },
     headerInfo: {
-        marginTop: -45, 
-        marginLeft: 110, 
-        minHeight: 50,
-        marginBottom: 4, // Tighter spacing
-        justifyContent: 'flex-end',
+        marginTop: -45,
+        marginLeft: 110,
+        height: 75, // Fixed height for alignment
+        marginBottom: 4,
+        justifyContent: 'center', // Center vertically
     },
     title: {
-        fontSize: 22, // Larger Title
-        fontWeight: '900', 
+        fontSize: 22,
+        fontWeight: '900',
         lineHeight: 26,
         marginBottom: 2,
-        textTransform: 'uppercase', 
+        textTransform: 'uppercase',
     },
     host: {
         fontSize: 13,
@@ -214,7 +233,7 @@ const styles = StyleSheet.create({
     detailsRow: {
         flexDirection: 'row',
         justifyContent: 'space-between',
-        alignItems: 'center', 
+        alignItems: 'center',
         marginTop: 16,
         marginBottom: 16,
     },
@@ -235,8 +254,8 @@ const styles = StyleSheet.create({
     priceBadge: {
         paddingVertical: 6,
         paddingHorizontal: 12,
-        borderRadius: 4, 
-        borderWidth: 1, 
+        borderRadius: 20, // Pill
+        borderWidth: 1,
         borderColor: 'rgba(0,0,0,0.1)',
     },
     priceText: {
@@ -246,19 +265,19 @@ const styles = StyleSheet.create({
         textTransform: 'uppercase',
     },
     registerBtn: {
-        flexDirection: 'row', // Added
-        gap: 4, // Added
-        paddingVertical: 12, // Reduced padding
-        paddingHorizontal: 24, // Reduced width
-        borderRadius: 8, // Less rounded, more button-like
+        flexDirection: 'row',
+        gap: 6,
+        paddingVertical: 14,
+        paddingHorizontal: 20,
+        borderRadius: 16, // Modern Rounded
         alignItems: 'center',
         justifyContent: 'center',
-        alignSelf: 'flex-start', // Don't stretch full width
+        width: '100%', // Full Width
     },
     registerText: {
         color: '#fff',
-        fontWeight: '800', // Slightly lighter weight
-        fontSize: 14, // Smaller font
+        fontWeight: '800',
+        fontSize: 14,
         letterSpacing: 1,
         textTransform: 'uppercase',
     }

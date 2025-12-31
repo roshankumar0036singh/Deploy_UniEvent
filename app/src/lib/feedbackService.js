@@ -32,21 +32,23 @@ export const submitFeedback = async ({
 
         // 2. Update event stats
         const eventRef = doc(db, 'events', eventId);
-        const eventUpdates = {
-            'stats.feedbackCount': increment(1)
+
+        const statsUpdate = {
+            feedbackCount: increment(1)
         };
 
         if (attended) {
-            eventUpdates['stats.totalAttendees'] = increment(1);
+            statsUpdate.totalAttendees = increment(1);
             if (eventRating) {
-                eventUpdates['stats.totalEventRating'] = increment(eventRating);
-                eventUpdates['stats.eventRatingCount'] = increment(1);
+                statsUpdate.totalEventRating = increment(eventRating);
+                statsUpdate.eventRatingCount = increment(1);
             }
         } else {
-            eventUpdates['stats.totalNoShows'] = increment(1);
+            statsUpdate.totalNoShows = increment(1);
         }
 
-        batch.update(eventRef, eventUpdates);
+        // Use set with merge to ensure 'stats' map is created if it doesn't exist
+        batch.set(eventRef, { stats: statsUpdate }, { merge: true });
 
         // 3. Update club reputation (if attended and rated)
         if (attended && clubRating) {
@@ -72,12 +74,22 @@ export const submitFeedback = async ({
             }
         }
 
-        // 4. Mark feedback request as completed
-        const requestRef = doc(db, 'feedbackRequests', feedbackRequestId);
-        batch.update(requestRef, {
-            status: 'completed',
-            completedAt: serverTimestamp()
-        });
+        // 4. Award points to user for submitting feedback
+        if (attended) {
+            const userRef = doc(db, 'users', userId);
+            batch.update(userRef, {
+                points: increment(5) // Award 5 points for giving feedback
+            });
+        }
+
+        // 5. Mark feedback request as completed
+        if (feedbackRequestId) {
+            const requestRef = doc(db, 'feedbackRequests', feedbackRequestId);
+            batch.update(requestRef, {
+                status: 'completed',
+                completedAt: serverTimestamp()
+            });
+        }
 
         // Commit all changes
         await batch.commit();
