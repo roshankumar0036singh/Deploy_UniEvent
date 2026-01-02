@@ -62,7 +62,7 @@ export default function MyEventsScreen({ navigation }) {
 
     const renderItem = ({ item }) => (
         <View style={styles.cardContainer}>
-            <EventCard event={item} onPress={() => navigation.navigate('EventDetail', { eventId: item.id })} />
+            <EventCard event={item} />
 
             <View style={[styles.actionBar, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
                 {/* Status */}

@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { addDoc, collection, doc, getDoc, onSnapshot, orderBy, query, serverTimestamp } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../lib/AuthContext';
 import { db } from '../lib/firebaseConfig';
@@ -14,6 +14,13 @@ export default function EventChatScreen({ route, navigation }) {
     const [messages, setMessages] = useState([]);
     const [inputText, setInputText] = useState('');
     const [sending, setSending] = useState(false);
+    const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+
+    const emojis = ["👍", "❤️", "😂", "😮", "😢", "😡", "🔥", "🎉", "👋", "🙏", "💯", "👀"];
+
+    const onEmojiSelect = (emoji) => {
+        setInputText(prev => prev + emoji);
+    };
 
     // Check if user is organizer/admin to show badge
     const [isOrganizer, setIsOrganizer] = useState(false);
@@ -149,6 +156,13 @@ export default function EventChatScreen({ route, navigation }) {
                         multiline
                     />
                     <TouchableOpacity
+                        style={[styles.iconBtn, { marginRight: 8 }]}
+                        onPress={() => setShowEmojiPicker(!showEmojiPicker)}
+                    >
+                        <Ionicons name="happy-outline" size={24} color={theme.colors.textSecondary} />
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
                         style={[styles.sendBtn, { backgroundColor: theme.colors.primary, opacity: !inputText.trim() ? 0.5 : 1 }]}
                         onPress={handleSend}
                         disabled={!inputText.trim() || sending}
@@ -156,6 +170,18 @@ export default function EventChatScreen({ route, navigation }) {
                         {sending ? <ActivityIndicator size="small" color="#fff" /> : <Ionicons name="send" size={20} color="#fff" />}
                     </TouchableOpacity>
                 </View>
+
+                {showEmojiPicker && (
+                    <View style={[styles.emojiPicker, { backgroundColor: theme.colors.surface, borderTopColor: theme.colors.border }]}>
+                        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ padding: 10, gap: 15 }}>
+                            {emojis.map((emoji, index) => (
+                                <TouchableOpacity key={index} onPress={() => onEmojiSelect(emoji)}>
+                                    <Text style={{ fontSize: 24 }}>{emoji}</Text>
+                                </TouchableOpacity>
+                            ))}
+                        </ScrollView>
+                    </View>
+                )}
             </KeyboardAvoidingView>
         </SafeAreaView>
     );
@@ -174,14 +200,13 @@ const styles = StyleSheet.create({
     messageRow: {
         flexDirection: 'row',
         marginBottom: 15,
-        maxWidth: '80%',
+        width: '100%',
     },
     myMessageRow: {
-        alignSelf: 'flex-end',
         justifyContent: 'flex-end',
     },
     otherMessageRow: {
-        alignSelf: 'flex-start',
+        justifyContent: 'flex-start',
     },
     avatar: {
         width: 32,
@@ -196,7 +221,8 @@ const styles = StyleSheet.create({
     bubble: {
         padding: 12,
         borderRadius: 18,
-        minWidth: 100,
+        minWidth: 50,
+        maxWidth: '80%',
     },
     myBubble: {
         borderBottomRightRadius: 4,
@@ -241,5 +267,15 @@ const styles = StyleSheet.create({
         borderRadius: 22,
         justifyContent: 'center',
         alignItems: 'center',
+    },
+    iconBtn: {
+        width: 40,
+        height: 40,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    emojiPicker: {
+        height: 60,
+        borderTopWidth: 1,
     }
 });

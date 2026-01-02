@@ -100,24 +100,18 @@ export default function ClubProfileScreen({ route, navigation }) {
         checkFollow();
     }, [user, clubId]);
 
-    // Calculate Average Rating based on Events
+    // Calculate Average Rating from club's reputation field
     const { avgRating, totalRatings } = useMemo(() => {
-        if (!events || events.length === 0) return { avgRating: 0, totalRatings: 0 };
+        if (!club || !club.reputation) return { avgRating: 0, totalRatings: 0 };
 
-        let totalPoints = 0;
-        let count = 0;
+        const reputation = club.reputation;
+        if (reputation.totalRatings && reputation.totalRatings > 0) {
+            const avg = (reputation.totalPoints / reputation.totalRatings).toFixed(1);
+            return { avgRating: avg, totalRatings: reputation.totalRatings };
+        }
 
-        events.forEach(e => {
-            const stats = e.stats || {};
-            if (stats.eventRatingCount > 0) {
-                totalPoints += (stats.totalEventRating || 0);
-                count += stats.eventRatingCount;
-            }
-        });
-
-        const avg = count > 0 ? (totalPoints / count).toFixed(1) : 0;
-        return { avgRating: avg, totalRatings: count };
-    }, [events]);
+        return { avgRating: 0, totalRatings: 0 };
+    }, [club]);
 
     const toggleFollow = async () => {
         if (!user) return;
@@ -281,7 +275,6 @@ export default function ClubProfileScreen({ route, navigation }) {
                                     <EventCard
                                         key={event.id}
                                         event={event}
-                                        onPress={() => navigation.push('EventDetail', { eventId: event.id })}
                                     />
                                 ))
                             )}

@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 // import { Picker } from '@react-native-picker/picker'; // Removed native picker
 import { LinearGradient } from 'expo-linear-gradient';
 import { updateProfile } from 'firebase/auth';
-import { collection, doc, getCountFromServer, getDoc, updateDoc } from 'firebase/firestore';
+import { collection, doc, getCountFromServer, getDoc, getDocs, updateDoc } from 'firebase/firestore';
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Platform, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
 import PremiumButton from '../components/PremiumButton';
@@ -49,6 +49,7 @@ export default function ProfileScreen({ navigation }) {
     const [branch, setBranch] = useState('CSE');
     const [points, setPoints] = useState(0);
     const [eventsCount, setEventsCount] = useState(0);
+    const [rating, setRating] = useState(0);
     const [isEditing, setIsEditing] = useState(false);
     const [loading, setLoading] = useState(false);
 
@@ -69,6 +70,23 @@ export default function ProfileScreen({ navigation }) {
                 if (data.linkedin) setLinkedin(data.linkedin);
                 if (data.branch) setBranch(data.branch);
                 if (data.points) setPoints(data.points);
+
+                // Fetch Club Rating (for club/admin users) from reputation field
+                if (role === 'club' || role === 'admin') {
+                    console.log('Fetching rating for club/admin user');
+                    console.log('User data:', data);
+                    const reputation = data.reputation || {};
+                    console.log('Reputation:', reputation);
+
+                    if (reputation.totalRatings && reputation.totalRatings > 0) {
+                        const avgRating = (reputation.totalPoints / reputation.totalRatings).toFixed(1);
+                        console.log('Calculated rating:', avgRating);
+                        setRating(parseFloat(avgRating));
+                    } else {
+                        console.log('No ratings found, setting to 0');
+                        setRating(0);
+                    }
+                }
             }
 
             // Fetch Participated Events Count
@@ -134,12 +152,12 @@ export default function ProfileScreen({ navigation }) {
 
                     <View style={{ alignItems: 'center', marginTop: 10 }}>
                         <Text style={styles.profileName}>{name || 'User'}</Text>
-                        <Text style={styles.profileEmail}>{user?.email}</Text>
-                        <View style={[styles.roleBadge, { backgroundColor: theme.colors.secondary + '40' }]}>
-                            <Text style={[styles.roleText, { color: theme.colors.secondary }]}>
-                                {role === 'admin' ? 'Administrator' : (branch ? `${branch} Student` : 'Student')}
+                        {bio ? (
+                            <Text style={styles.profileBio} numberOfLines={3}>
+                                {bio}
                             </Text>
-                        </View>
+                        ) : null}
+                        <Text style={styles.profileEmail}>{user?.email}</Text>
                     </View>
 
                     {!isEditing && (
@@ -153,9 +171,19 @@ export default function ProfileScreen({ navigation }) {
                 {/* Stats Row */}
                 {!isEditing && (
                     <View style={styles.statsRow}>
-                        <StatCard label="Year" value={year || '-'} icon="school-outline" theme={theme} styles={styles} />
-                        <StatCard label="Points" value={points} icon="trophy-outline" theme={theme} styles={styles} />
-                        <StatCard label="Events" value={eventsCount} icon="calendar-outline" theme={theme} styles={styles} />
+                        {(role === 'club' || role === 'admin') ? (
+                            <>
+                                <StatCard label="Rating" value={rating && rating > 0 ? rating : '-'} icon="star-outline" theme={theme} styles={styles} />
+                                <StatCard label="Points" value={points} icon="trophy-outline" theme={theme} styles={styles} />
+                                <StatCard label="Events" value={eventsCount} icon="calendar-outline" theme={theme} styles={styles} />
+                            </>
+                        ) : (
+                            <>
+                                <StatCard label="Year" value={year || '-'} icon="school-outline" theme={theme} styles={styles} />
+                                <StatCard label="Points" value={points} icon="trophy-outline" theme={theme} styles={styles} />
+                                <StatCard label="Events" value={eventsCount} icon="calendar-outline" theme={theme} styles={styles} />
+                            </>
+                        )}
                     </View>
                 )}
 
@@ -190,24 +218,26 @@ export default function ProfileScreen({ navigation }) {
                             numberOfLines={4}
                         />
 
-                        {/* Social Links */}
-                        <View style={{ marginVertical: 10 }}>
-                            <Text style={[styles.groupTitle, { marginBottom: 15, marginLeft: 4 }]}>Social Links</Text>
-                            <PremiumInput
-                                label="Instagram URL"
-                                value={instagram}
-                                onChangeText={setInstagram}
-                                placeholder="https://instagram.com/..."
-                                icon={<Ionicons name="logo-instagram" size={20} color={theme.colors.textSecondary} />}
-                            />
-                            <PremiumInput
-                                label="LinkedIn URL"
-                                value={linkedin}
-                                onChangeText={setLinkedin}
-                                placeholder="https://linkedin.com/in/..."
-                                icon={<Ionicons name="logo-linkedin" size={20} color={theme.colors.textSecondary} />}
-                            />
-                        </View>
+                        {/* Social Links - Only for Club/Admin */}
+                        {(role === 'club' || role === 'admin') && (
+                            <View style={{ marginVertical: 10 }}>
+                                <Text style={[styles.groupTitle, { marginBottom: 15, marginLeft: 4 }]}>Social Links</Text>
+                                <PremiumInput
+                                    label="Instagram URL"
+                                    value={instagram}
+                                    onChangeText={setInstagram}
+                                    placeholder="https://instagram.com/..."
+                                    icon={<Ionicons name="logo-instagram" size={20} color={theme.colors.textSecondary} />}
+                                />
+                                <PremiumInput
+                                    label="LinkedIn URL"
+                                    value={linkedin}
+                                    onChangeText={setLinkedin}
+                                    placeholder="https://linkedin.com/in/..."
+                                    icon={<Ionicons name="logo-linkedin" size={20} color={theme.colors.textSecondary} />}
+                                />
+                            </View>
+                        )}
 
                         {/* Academic Info Header */}
                         {role !== 'admin' && <Text style={[styles.groupTitle, { marginBottom: 15, marginLeft: 4, marginTop: 10 }]}>Academic Info</Text>}
@@ -332,25 +362,38 @@ export default function ProfileScreen({ navigation }) {
                                 <View style={{ padding: 15 }}>
                                     <Text style={[styles.label, { marginBottom: 10 }]}>Switch Accounts</Text>
                                     <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                                        {/* Active */}
+                                        {/* Active Account */}
                                         <View style={[styles.accountAvatarSmall, styles.activeAccountBorder, { borderColor: theme.colors.primary }]}>
-                                            <Text style={styles.accountAvatarText}>{name?.[0] || 'U'}</Text>
+                                            <Text style={styles.accountAvatarText}>{name?.[0]?.toUpperCase() || 'U'}</Text>
                                         </View>
 
+                                        {/* Saved Accounts */}
                                         {savedAccounts.filter(acc => acc.email !== user?.email).map((acc, i) => (
-                                            <TouchableOpacity key={i} onPress={() => switchAccount(acc.email)} onLongPress={() => removeSavedAccount(acc.email)}>
-                                                <View style={[styles.accountAvatarSmall, { backgroundColor: theme.colors.background }]}>
-                                                    <Text style={[styles.accountAvatarText, { color: theme.colors.text }]}>{acc.displayName?.[0]}</Text>
+                                            <TouchableOpacity
+                                                key={i}
+                                                onPress={() => switchAccount(acc.email)}
+                                                onLongPress={() => removeSavedAccount(acc.email)}
+                                                activeOpacity={0.7}
+                                            >
+                                                <View style={[styles.accountAvatarSmall, { backgroundColor: theme.colors.primary + '40', borderWidth: 1, borderColor: theme.colors.primary + '60' }]}>
+                                                    <Text style={[styles.accountAvatarText, { color: theme.colors.primary }]}>{acc.displayName?.[0]?.toUpperCase() || acc.email?.[0]?.toUpperCase()}</Text>
                                                 </View>
                                             </TouchableOpacity>
                                         ))}
 
-                                        <TouchableOpacity onPress={() => { Alert.alert("Add Account", "Sign out to add new?", [{ text: "Cancel" }, { text: "Yes, Sign Out", onPress: signOut }]) }}>
-                                            <View style={[styles.accountAvatarSmall, { backgroundColor: 'transparent', borderWidth: 1, borderColor: theme.colors.textSecondary, borderStyle: 'dashed' }]}>
+                                        {/* Add Account Button */}
+                                        <TouchableOpacity
+                                            onPress={() => signOut()}
+                                            activeOpacity={0.7}
+                                        >
+                                            <View style={[styles.accountAvatarSmall, { backgroundColor: 'transparent', borderWidth: 2, borderColor: theme.colors.textSecondary, borderStyle: 'dashed' }]}>
                                                 <Ionicons name="add" size={20} color={theme.colors.textSecondary} />
                                             </View>
                                         </TouchableOpacity>
                                     </ScrollView>
+                                    <Text style={[styles.helperText, { color: theme.colors.textSecondary, marginTop: 8 }]}>
+                                        Tap to switch • Long press to remove
+                                    </Text>
                                 </View>
                             </View>
                         </View>
@@ -404,15 +447,25 @@ const getStyles = (theme) => StyleSheet.create({
         color: theme.colors.primary,
     },
     profileName: {
-        fontSize: 24,
+        fontSize: 26,
         fontWeight: 'bold',
         color: theme.colors.text,
         marginBottom: 4,
     },
     profileEmail: {
-        fontSize: 14,
+        fontSize: 13,
         color: theme.colors.textSecondary,
         marginBottom: 10,
+    },
+    profileBio: {
+        fontSize: 16,
+        textAlign: 'center',
+        color: theme.colors.primary, // Highlight bio
+        paddingHorizontal: 20,
+        marginTop: 4,
+        marginBottom: 4,
+        lineHeight: 22,
+        fontWeight: '500',
     },
     roleBadge: {
         paddingHorizontal: 12,

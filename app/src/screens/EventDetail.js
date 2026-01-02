@@ -131,7 +131,7 @@ export default function EventDetail({ route, navigation }) {
 
     const shareEvent = async () => {
         try {
-            const eventUrl = `https://unievent.app/event/${eventId}`; // Replace with your actual domain
+            const eventUrl = `https://unievent-ez2w.onrender.com/event/${eventId}`; // Replace with your actual domain
             const shareMessage = `🎉 Check out this event: ${event.title}\n\n📅 ${new Date(event.startAt).toLocaleDateString()} at ${new Date(event.startAt).toLocaleTimeString()}\n📍 ${event.location || 'Online'}\n\n${eventUrl}`;
 
             // For web, use Web Share API if available
@@ -585,7 +585,7 @@ export default function EventDetail({ route, navigation }) {
                         >
                             <Text style={[styles.primaryBtnText, rsvpStatus === 'going' && styles.secondaryBtnText, new Date(event.endAt) < new Date() && { color: '#fff' }]}>
                                 {new Date(event.endAt) < new Date()
-                                    ? (rsvpStatus === 'going' ? 'Event Ended (Participated)' : 'Event Ended')
+                                    ? (rsvpStatus === 'going' ? 'Event Ended' : 'Closed')
                                     : (rsvpStatus === 'going' ? 'Registered ✓' : (event.isPaid ? `Book Ticket (₹${event.price})` : 'RSVP Now'))
                                 }
                             </Text>

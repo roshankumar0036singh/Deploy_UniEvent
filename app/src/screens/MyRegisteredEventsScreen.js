@@ -88,7 +88,6 @@ export default function MyRegisteredEventsScreen({ navigation }) {
                 renderItem={({ item }) => (
                     <EventCard
                         event={item}
-                        onPress={() => navigation.navigate('EventDetail', { eventId: item.id })}
                     />
                 )}
                 ListEmptyComponent={

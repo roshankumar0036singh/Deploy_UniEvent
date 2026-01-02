@@ -36,11 +36,27 @@ export default function QRScannerScreen({ navigation, route }) {
         setScanned(true);
 
         try {
-            // Data format: "event:<eventId>|user:<userId>" OR just "user:<userId>" depending on implementation
-            // Assuming simple User ID payload for now: "UID123"
-            const scannedUserId = data; 
-            
-            // Or if JSON: const payload = JSON.parse(data); const scannedUserId = payload.uid;
+            // Parse QR code data - it's a JSON object from TicketScreen
+            let scannedUserId;
+            let ticketData;
+
+            try {
+                // Try to parse as JSON first (from TicketScreen)
+                ticketData = JSON.parse(data);
+                scannedUserId = ticketData.userId;
+
+                // Validate that this ticket is for the current event
+                if (ticketData.eventId !== eventId) {
+                    setScanResult({
+                        status: 'error',
+                        message: 'This ticket is for a different event!'
+                    });
+                    return;
+                }
+            } catch (e) {
+                // If JSON parsing fails, treat as plain userId string (fallback)
+                scannedUserId = data;
+            }
 
             console.log(`Scanned user: ${scannedUserId} for event: ${eventId}`);
 
@@ -59,11 +75,12 @@ export default function QRScannerScreen({ navigation, route }) {
             const checkInRef = collection(db, 'events', eventId, 'checkIns');
             await addDoc(checkInRef, {
                 userId: scannedUserId,
-                userName: userData.name,
-                userBranch: userData.branch,
-                userYear: userData.year,
+                userName: userData.name || ticketData?.attendeeName,
+                userBranch: userData.branch || ticketData?.branch,
+                userYear: userData.year || ticketData?.year,
                 checkedInAt: serverTimestamp(),
-                checkedBy: user.uid
+                checkedBy: user.uid,
+                ticketId: ticketData?.ticketId || null
             });
 
             // 3. Mark registration as attended (optional, if separate collection)
@@ -71,10 +88,10 @@ export default function QRScannerScreen({ navigation, route }) {
             // Check if registration exists first or just set merge
             await updateDoc(registrationRef, { status: 'attended' }).catch(err => console.log('No reg doc, skipping update'));
 
-            setScanResult({ 
-                status: 'success', 
-                message: `Checked in ${userData.name}!`, 
-                user: userData 
+            setScanResult({
+                status: 'success',
+                message: `Checked in ${userData.name || ticketData?.attendeeName}!`,
+                user: userData
             });
 
         } catch (error) {
@@ -92,7 +109,7 @@ export default function QRScannerScreen({ navigation, route }) {
 
     return (
         <ScreenWrapper edges={['top', 'bottom']} showLogo={false} style={{ paddingHorizontal: 0 }}>
-             <View style={styles.overlayHeader}>
+            <View style={styles.overlayHeader}>
                 <TouchableOpacity onPress={() => navigation.goBack()} style={styles.closeBtn}>
                     <Ionicons name="close" size={28} color="#fff" />
                 </TouchableOpacity>
@@ -101,8 +118,8 @@ export default function QRScannerScreen({ navigation, route }) {
 
             <View style={styles.cameraContainer}>
                 {Platform.OS === 'web' ? (
-                    <WebQRScanner 
-                        onScan={(data) => !scanned && handleBarCodeScanned({ type: 'qr', data })} 
+                    <WebQRScanner
+                        onScan={(data) => !scanned && handleBarCodeScanned({ type: 'qr', data })}
                         style={styles.camera}
                     />
                 ) : (
@@ -111,7 +128,7 @@ export default function QRScannerScreen({ navigation, route }) {
                         style={styles.camera}
                     />
                 )}
-                
+
                 <View style={styles.overlayFrame}>
                     <View style={styles.scanFrame} />
                 </View>
@@ -126,18 +143,18 @@ export default function QRScannerScreen({ navigation, route }) {
                         ) : (
                             <Ionicons name="alert-circle" size={60} color="#F44336" />
                         )}
-                        
+
                         <Text style={[styles.resultTitle, { color: theme.colors.text }]}>
                             {scanResult?.status === 'success' ? 'Success!' : 'Error'}
                         </Text>
-                        
+
                         <Text style={[styles.resultMessage, { color: theme.colors.textSecondary }]}>
                             {scanResult?.message}
                         </Text>
 
-                        <TouchableOpacity 
+                        <TouchableOpacity
                             style={[
-                                styles.actionBtn, 
+                                styles.actionBtn,
                                 { backgroundColor: scanResult?.status === 'success' ? '#4CAF50' : theme.colors.primary }
                             ]}
                             onPress={() => {

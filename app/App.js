@@ -152,6 +152,26 @@ function TabNavigator() {
   );
 }
 
+
+
+const linking = {
+  prefixes: [
+    'https://unievent-ez2w.onrender.com',
+    'unievent://',
+    'http://localhost:19006'
+  ],
+  config: {
+    screens: {
+      Main: {
+        screens: {
+          Home: 'home',
+        },
+      },
+      EventDetail: 'event/:eventId',
+    },
+  },
+};
+
 function Navigation() {
   const { user, loading } = useAuth();
   const { theme } = useTheme();
@@ -168,7 +188,7 @@ function Navigation() {
   }
 
   return (
-    <NavigationContainer>
+    <NavigationContainer linking={linking}>
       <Stack.Navigator
         screenOptions={{
           headerStyle: {

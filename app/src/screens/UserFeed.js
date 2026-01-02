@@ -219,7 +219,6 @@ export default function UserFeed({ navigation, headerContent }) {
                     });
                 } catch (e) { console.log(e); }
             }}
-            onPress={() => navigation.navigate('EventDetail', { eventId: item.id })}
         />
     );
 
@@ -237,7 +236,7 @@ export default function UserFeed({ navigation, headerContent }) {
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20 }}>
                     {getRecommendedEvents().map(event => (
                         <View key={event.id} style={{ width: 280, marginRight: 15 }}>
-                            <EventCard event={event} onPress={() => navigation.navigate('EventDetail', { eventId: event.id })} />
+                            <EventCard event={event} />
                         </View>
                     ))}
                     {getRecommendedEvents().length === 0 && (

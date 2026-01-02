@@ -19,7 +19,7 @@ export default function LeaderboardScreen({ navigation }) {
     const isAnonymous = myUserDoc?.isAnonymous || false;
 
     useEffect(() => {
-        const q = query(collection(db, 'users'), orderBy('points', 'desc'), limit(50));
+        const q = query(collection(db, 'users'), orderBy('points', 'desc'), limit(10));
         const unsubscribe = onSnapshot(q, (snapshot) => {
             const list = snapshot.docs.map((doc, index) => ({
                 id: doc.id,
@@ -132,7 +132,8 @@ export default function LeaderboardScreen({ navigation }) {
                     keyExtractor={item => item.id}
                     renderItem={renderItem}
                     ListHeaderComponent={ListHeader}
-                    contentContainerStyle={{ paddingBottom: 20 }}
+                    contentContainerStyle={{ paddingBottom: 100 }}
+                    style={{ flex: 1 }}
                     showsVerticalScrollIndicator={false}
                     ListEmptyComponent={<Text style={{ color: theme.colors.textSecondary, textAlign: 'center' }}>No players yet.</Text>}
                 />
