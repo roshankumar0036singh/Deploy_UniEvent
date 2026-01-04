@@ -8,7 +8,7 @@ import { db } from '../lib/firebaseConfig';
 import { useTheme } from '../lib/ThemeContext';
 
 export default function PaymentScreen({ route, navigation }) {
-    const { event, price } = route.params;
+    const { event, price, formResponses } = route.params;
     const { user } = useAuth();
     const { theme } = useTheme();
 
@@ -115,6 +115,22 @@ export default function PaymentScreen({ route, navigation }) {
                     ticketId: ticketRef.id,
                     status: 'paid'
                 });
+
+                // 4. Save Custom Form Responses (if any)
+                if (formResponses) {
+                    await addDoc(collection(db, 'registrations'), {
+                        eventId: event.id,
+                        eventId_userId: `${event.id}_${user.uid}`,
+                        userId: user.uid,
+                        userEmail: user.email,
+                        userName: user.displayName,
+                        responses: formResponses,
+                        schemaAtSubmission: event.customFormSchema || [],
+                        ticketId: ticketRef.id,
+                        timestamp: new Date().toISOString(),
+                        status: 'paid'
+                    });
+                }
 
                 setLoading(false);
 

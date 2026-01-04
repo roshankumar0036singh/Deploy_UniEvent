@@ -1,19 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { collection, onSnapshot, orderBy, query, getDocs, doc, getDoc } from 'firebase/firestore';
+import { collection, onSnapshot, orderBy, query, getDocs, doc, getDoc, where, updateDoc } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Dimensions, ScrollView, Share, StyleSheet, Text, TouchableOpacity, View, Platform } from 'react-native';
+import { ActivityIndicator, Alert, Dimensions, ScrollView, Share, StyleSheet, Text, TouchableOpacity, View, Platform, Modal, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../lib/AuthContext';
 import { db } from '../lib/firebaseConfig';
 import { useTheme } from '../lib/ThemeContext';
-
-// Mock services if missing
-const getAttendanceStats = async (eventId) => {
-    // In a real app this would aggregate firestore data
-    return { totalRegistrations: 0, totalCheckedIn: 0, checkInRate: 0, pending: 0 };
-};
-
+import { sendBulkAnnouncement, sendBulkFeedbackRequest } from '../lib/EmailService';
 
 const { width } = Dimensions.get('window');
 
@@ -22,26 +16,125 @@ export default function AttendanceDashboard({ route, navigation }) {
     const { user } = useAuth();
     const { theme } = useTheme();
 
-    const [stats, setStats] = useState(null);
     const [checkIns, setCheckIns] = useState([]);
     const [loading, setLoading] = useState(true);
     const [exporting, setExporting] = useState(false);
     const [departmentStats, setDepartmentStats] = useState({});
     const [yearStats, setYearStats] = useState({});
+    const [eventData, setEventData] = useState(null);
 
-    // Real-time stats listener
+    // Announcement State
+    const [announcementModalVisible, setAnnouncementModalVisible] = useState(false);
+    const [announcementSubject, setAnnouncementSubject] = useState('');
+    const [announcementMessage, setAnnouncementMessage] = useState('');
+    const [sending, setSending] = useState(false);
+
+    const handleRequestFeedback = async () => {
+        Alert.alert("Send Feedback Request", "Send email to all participants asking for feedback?", [
+            { text: "Cancel", style: "cancel" },
+            {
+                text: "Send", onPress: async () => {
+                    setSending(true);
+                    try {
+                        const participantsRef = collection(db, `events/${eventId}/participants`);
+                        const snapshot = await getDocs(participantsRef);
+                        const participants = snapshot.docs.map(doc => ({
+                            name: doc.data().name,
+                            email: doc.data().email
+                        })).filter(p => p.email && p.email !== '-');
+
+                        if (participants.length === 0) {
+                            Alert.alert("Error", "No participants found.");
+                            setSending(false);
+                            return;
+                        }
+
+                        const count = await sendBulkFeedbackRequest(participants, eventTitle, eventId);
+                        Alert.alert("Success", `Feedback request sent to ${count} participants.`);
+
+                    } catch (e) {
+                        console.error(e);
+                        Alert.alert("Error", "Failed to send requests.");
+                    } finally {
+                        setSending(false);
+                    }
+                }
+            }
+        ]);
+    };
+
+    const handleSendAnnouncement = async () => {
+        if (!announcementSubject.trim() || !announcementMessage.trim()) {
+            Alert.alert("Error", "Please enter subject and message");
+            return;
+        }
+
+        setSending(true);
+        try {
+            // Fetch Participants
+            const participantsRef = collection(db, `events/${eventId}/participants`);
+            const snapshot = await getDocs(participantsRef);
+
+            if (snapshot.empty) {
+                Alert.alert("No Participants", "No one to send email to.");
+                setSending(false);
+                return;
+            }
+
+            const participants = snapshot.docs.map(doc => ({
+                name: doc.data().name,
+                email: doc.data().email
+            })).filter(p => p.email && p.email !== '-');
+
+            if (participants.length === 0) {
+                Alert.alert("No Emails", "No valid emails found.");
+                setSending(false);
+                return;
+            }
+
+            // Send
+            const count = await sendBulkAnnouncement(participants, announcementSubject, announcementMessage);
+
+            Alert.alert("Success", `Sent to ${count} participants.`);
+            setAnnouncementModalVisible(false);
+            setAnnouncementSubject('');
+            setAnnouncementMessage('');
+
+        } catch (error) {
+            console.error(error);
+            Alert.alert("Error", "Failed to send.");
+        } finally {
+            setSending(false);
+        }
+    };
+
+    // Fetch Event Data to check for Custom Form
     useEffect(() => {
-        const fetchStats = async () => {
-            const statsData = await getAttendanceStats(eventId);
-            setStats(statsData);
-            setLoading(false);
-        };
-
-        fetchStats();
-        // Poll every 10s for aggregate stats
-        const interval = setInterval(fetchStats, 10000);
-        return () => clearInterval(interval);
+        getDoc(doc(db, 'events', eventId)).then(snap => {
+            if (snap.exists()) setEventData(snap.data());
+        });
     }, [eventId]);
+
+    // Live Participant Count
+    const [totalRegistrations, setTotalRegistrations] = useState(0);
+
+    // Real-time participants listener
+    useEffect(() => {
+        const participantsRef = collection(db, `events/${eventId}/participants`);
+        const unsubscribe = onSnapshot(participantsRef, (snapshot) => {
+            setTotalRegistrations(snapshot.size);
+            setLoading(false);
+        }, (error) => {
+            console.error("Error fetching participants:", error);
+            setLoading(false);
+        });
+
+        return () => unsubscribe();
+    }, [eventId]);
+
+    // Note: Automatic feedback sending is now handled globally in App.js via AutomationService.
+    // This component simply reflects the status via 'eventData.feedbackRequestSent'.
+
 
     // Real-time check-ins listener
     useEffect(() => {
@@ -171,6 +264,53 @@ export default function AttendanceDashboard({ route, navigation }) {
         } catch (error) {
             console.error("Export Error: ", error);
             Alert.alert("Error", "Failed to export reviews.");
+        } finally {
+            setExporting(false);
+        }
+    };
+
+    const handleExportFormResponses = async () => {
+        setExporting(true);
+        try {
+            const q = query(collection(db, 'registrations'), where('eventId', '==', eventId));
+            const snapshot = await getDocs(q);
+
+            if (snapshot.empty) {
+                Alert.alert("No Data", "No form responses found.");
+                setExporting(false);
+                return;
+            }
+
+            // Build CSV Header from Schema
+            const schema = eventData.customFormSchema || [];
+            if (schema.length === 0) {
+                Alert.alert("Error", "Schema not found");
+                setExporting(false);
+                return;
+            }
+
+            let csv = "User Name,User Email," + schema.map(f => f.label).join(',') + ",Date\n";
+
+            snapshot.forEach(doc => {
+                const d = doc.data();
+                const responseMap = d.responses || {};
+
+                const responseValues = schema.map(f => {
+                    let val = responseMap[f.id] || '';
+                    val = String(val).replace(/"/g, '""'); // Escape quotes
+                    return `"${val}"`;
+                });
+
+                const line = `"${d.userName || 'Anonymous'}","${d.userEmail || '-'}","${responseValues.join('","')}","${d.timestamp}"\n`;
+                csv += line;
+            });
+
+            await downloadCSV(csv, `Form_Responses_${eventTitle}.csv`);
+            if (Platform.OS === 'web') Alert.alert("Success", "Download started!");
+
+        } catch (e) {
+            console.error("Export Error: ", e);
+            Alert.alert("Error", "Failed to export responses.");
         } finally {
             setExporting(false);
         }
@@ -319,28 +459,16 @@ export default function AttendanceDashboard({ route, navigation }) {
                     <StatCard
                         icon="people"
                         label="REGISTERED"
-                        value={stats?.totalRegistrations || 0}
+                        value={totalRegistrations}
                         color={theme.colors.primary}
                         gradient={[theme.colors.primary + '20', theme.colors.primary + '10']}
                     />
                     <StatCard
                         icon="checkmark-done-circle"
                         label="CHECKED IN"
-                        value={stats?.totalCheckedIn || 0}
-                        color="#ffffff" // White for contrast, or maybe lighter gold? No, user wants matching colour.
-                        // Actually, let's use the primary color but maybe varying opacity or just consistent gold.
-                        // If I use gold for both, it matches. Let's try that.
-                        // Or maybe simple white/grey for the second one to keep it clean.
-                        // Let's stick to Primary (Gold) for main, and maybe White for Checked In to differentiate? 
-                        // User said "redesign ... in matching colour". Gold usually implies the main accent. 
-                        // Let's use Gold for both but distinct icons.
-                        // Or actually, let's use Gold for "Registered" and White text/icon for "Checked In" but with a Gold border?
-                        // To be safe and "premium", let's use the Theme Primary for Registered and maybe a standard Text Color for Checked In but with Primary Icon.
-                        // Wait, previous code had Blue and Green.
-                        // I will set both to utilize the Primary color theme but maybe one is filled and one is outlined?
-                        // For consistency, I will use Primary for both, or Primary and Secondary.
-                        // Let's use theme.colors.primary for Registered, and maybe theme.colors.text (White) for Checked In, with Primary Icon.
-                        gradient={[theme.colors.surface, theme.colors.surface]} // Just surface
+                        value={checkIns.length}
+                        color={theme.colors.success} // Use Success/Green for check-ins for distinction, or Primary if strictly requested. Let's use Primary for now but maybe a variant. Wait, user screenshot showed Gold 0. Let's stick strictly to Theme.
+                        gradient={[theme.colors.surface, theme.colors.surface]}
                     />
                     {/* Re-doing the StatCards to be safe and consistent */}
                 </View>
@@ -399,16 +527,63 @@ export default function AttendanceDashboard({ route, navigation }) {
                     />
                 )}
 
+                {/* Communication Section */}
+                {/* Communication Section */}
+                <View style={styles.exportContainer}>
+                    <Text style={[styles.exportTitle, { color: theme.colors.text }]}>Communication</Text>
+                    <View style={styles.exportButtons}>
+                        <TouchableOpacity
+                            style={[styles.exportBtn, styles.premiumBtn, { borderColor: theme.colors.primary }]}
+                            onPress={() => setAnnouncementModalVisible(true)}
+                        >
+                            <Ionicons name="megaphone" size={24} color={theme.colors.primary} />
+                            <Text style={[styles.exportBtnText, { color: theme.colors.primary }]}>Announce</Text>
+                        </TouchableOpacity>
+
+                        {/* Automatic Feedback Status Indicator (Clickable to Force Send) */}
+                        <TouchableOpacity
+                            style={[
+                                styles.exportBtn,
+                                styles.premiumBtn,
+                                { borderColor: eventData?.feedbackRequestSent ? theme.colors.success : theme.colors.border, backgroundColor: theme.colors.surface }
+                            ]}
+                            onPress={handleRequestFeedback}
+                            disabled={sending}
+                        >
+                            {eventData?.feedbackRequestSent ? (
+                                <>
+                                    <Ionicons name="checkmark-done-circle" size={24} color={theme.colors.success} />
+                                    <Text style={[styles.exportBtnText, { color: theme.colors.success }]}>Feedback Sent</Text>
+                                </>
+                            ) : (
+                                <>
+                                    <Ionicons name="star-outline" size={24} color={theme.colors.secondary} />
+                                    <Text style={[styles.exportBtnText, { color: theme.colors.textSecondary }]}>
+                                        {new Date() > new Date(eventData?.endAt || 0) ? "Sending..." : "Pending"}
+                                    </Text>
+                                </>
+                            )}
+                        </TouchableOpacity>
+                    </View>
+                    <Text style={{ marginTop: 8, fontSize: 12, color: theme.colors.textSecondary }}>
+                        *Feedback requests are sent automatically when the event ends.
+                    </Text>
+                </View>
+
+                {/* Export Data Section */}
                 <View style={styles.exportContainer}>
                     <Text style={[styles.exportTitle, { color: theme.colors.text }]}>Export Data</Text>
                     <View style={styles.exportButtons}>
+                        {/* Intelligent Export Button: Prioritizes Custom Form Responses */}
                         <TouchableOpacity
                             style={[styles.exportBtn, styles.premiumBtn]}
-                            onPress={handleExportParticipants}
+                            onPress={eventData?.hasCustomForm ? handleExportFormResponses : handleExportParticipants}
                             disabled={exporting}
                         >
-                            <Ionicons name="people" size={24} color={theme.colors.primary} />
-                            <Text style={[styles.exportBtnText, { color: theme.colors.primary }]}>Participants</Text>
+                            <Ionicons name="document-text" size={24} color={theme.colors.primary} />
+                            <Text style={[styles.exportBtnText, { color: theme.colors.primary }]}>
+                                {eventData?.hasCustomForm ? "Form Responses" : "Participants"}
+                            </Text>
                         </TouchableOpacity>
 
                         <TouchableOpacity
@@ -424,6 +599,52 @@ export default function AttendanceDashboard({ route, navigation }) {
 
                 <View style={{ height: 40 }} />
             </ScrollView>
+
+            {/* Announcement Modal */}
+            <Modal
+                visible={announcementModalVisible}
+                transparent
+                animationType="slide"
+                onRequestClose={() => setAnnouncementModalVisible(false)}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={[styles.modalContent, { backgroundColor: theme.colors.surface }]}>
+                        <View style={styles.modalHeader}>
+                            <Text style={[styles.modalTitle, { color: theme.colors.text }]}>New Announcement</Text>
+                            <TouchableOpacity onPress={() => setAnnouncementModalVisible(false)}>
+                                <Ionicons name="close" size={24} color={theme.colors.textSecondary} />
+                            </TouchableOpacity>
+                        </View>
+
+                        <Text style={[styles.inputLabel, { color: theme.colors.textSecondary }]}>Subject</Text>
+                        <TextInput
+                            style={[styles.input, { color: theme.colors.text, borderColor: theme.colors.border }]}
+                            placeholder="e.g. Important Update regarding..."
+                            placeholderTextColor={theme.colors.textSecondary}
+                            value={announcementSubject}
+                            onChangeText={setAnnouncementSubject}
+                        />
+
+                        <Text style={[styles.inputLabel, { color: theme.colors.textSecondary }]}>Message</Text>
+                        <TextInput
+                            style={[styles.input, { color: theme.colors.text, borderColor: theme.colors.border, height: 100, textAlignVertical: 'top' }]}
+                            placeholder="Type your message here..."
+                            placeholderTextColor={theme.colors.textSecondary}
+                            multiline
+                            value={announcementMessage}
+                            onChangeText={setAnnouncementMessage}
+                        />
+
+                        <TouchableOpacity
+                            style={[styles.sendBtn, { backgroundColor: theme.colors.primary }]}
+                            onPress={handleSendAnnouncement}
+                            disabled={sending}
+                        >
+                            {sending ? <ActivityIndicator color="#fff" /> : <Text style={styles.sendBtnText}>Send to All Participants</Text>}
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
         </SafeAreaView>
     );
 }
@@ -496,4 +717,18 @@ const styles = StyleSheet.create({
         borderWidth: 1, borderColor: '#FFD700', borderRadius: 14 // Gold border
     },
     exportBtnText: { fontSize: 14, fontWeight: '700' },
+
+    // Modal Styles
+    modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 20 },
+    modalContent: { borderRadius: 20, padding: 20, elevation: 5 },
+    modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+    modalTitle: { fontSize: 20, fontWeight: 'bold' },
+    inputLabel: { fontSize: 14, marginBottom: 8, fontWeight: '600' },
+    input: {
+        borderWidth: 1, borderRadius: 12, padding: 12, marginBottom: 16, fontSize: 16
+    },
+    sendBtn: {
+        padding: 16, borderRadius: 14, alignItems: 'center', marginTop: 10
+    },
+    sendBtnText: { color: '#fff', fontSize: 16, fontWeight: 'bold' }
 });

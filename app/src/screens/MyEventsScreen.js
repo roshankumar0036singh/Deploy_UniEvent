@@ -77,7 +77,7 @@ export default function MyEventsScreen({ navigation }) {
                 <View style={styles.actions}>
                     <TouchableOpacity
                         style={[styles.actionBtn, { backgroundColor: theme.colors.primary + '15' }]}
-                        onPress={() => navigation.navigate('EventAnalytics', { eventId: item.id })}
+                        onPress={() => navigation.navigate('AttendanceDashboard', { eventId: item.id, eventTitle: item.title })}
                     >
                         <Ionicons name="bar-chart" size={18} color={theme.colors.primary} />
                     </TouchableOpacity>

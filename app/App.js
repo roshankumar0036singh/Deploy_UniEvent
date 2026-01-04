@@ -10,6 +10,7 @@ import NotificationBell from './src/components/NotificationBell';
 import ScreenWrapper from './src/components/ScreenWrapper';
 import { AuthProvider, useAuth } from './src/lib/AuthContext';
 import { ThemeProvider, useTheme } from './src/lib/ThemeContext';
+import { checkAndTriggerAutomations } from './src/lib/AutomationService';
 import AdminDashboard from './src/screens/AdminDashboard';
 import AttendanceDashboard from './src/screens/AttendanceDashboard';
 import AuthScreen from './src/screens/AuthScreen';
@@ -29,6 +30,8 @@ import TicketScreen from './src/screens/TicketScreen';
 import WalletScreen from './src/screens/WalletScreen';
 import MyRegisteredEventsScreen from './src/screens/MyRegisteredEventsScreen';
 import SavedEventsScreen from './src/screens/SavedEventsScreen';
+import FormBuilderScreen from './src/screens/FormBuilderScreen';
+import EventRegistrationFormScreen from './src/screens/EventRegistrationFormScreen';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -224,6 +227,8 @@ function Navigation() {
             <Stack.Screen name="Wallet" component={WalletScreen} options={{ headerShown: false }} />
             <Stack.Screen name="MyRegisteredEvents" component={MyRegisteredEventsScreen} options={{ title: 'My Calendar' }} />
             <Stack.Screen name="SavedEvents" component={SavedEventsScreen} options={{ title: 'Saved Events' }} />
+            <Stack.Screen name="FormBuilder" component={FormBuilderScreen} options={{ headerShown: false }} />
+            <Stack.Screen name="EventRegistrationForm" component={EventRegistrationFormScreen} options={{ headerShown: false }} />
           </>
         ) : (
           <Stack.Screen name="Auth" component={AuthScreen} options={{ headerShown: false }} />
@@ -266,6 +271,9 @@ function AppContent() {
         updateDoc(doc(db, 'users', user.uid), {
           pushToken: token
         }).catch(err => console.log("Failed to save push token", err));
+
+        // Global Automation Check
+        checkAndTriggerAutomations(user.uid);
       }
     });
 

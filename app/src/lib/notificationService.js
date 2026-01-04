@@ -4,15 +4,14 @@ import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 
 // Configure how notifications behave when the app is in the foreground
-if (Platform.OS !== 'web') {
-  Notifications.setNotificationHandler({
-    handleNotification: async () => ({
-      shouldShowAlert: true,
-      shouldPlaySound: true,
-      shouldSetBadge: false,
-    }),
-  });
-}
+// Configure how notifications behave when the app is in the foreground
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
 
 // Request permissions and get the push token
 export async function registerForPushNotificationsAsync() {
@@ -27,7 +26,7 @@ export async function registerForPushNotificationsAsync() {
     });
   }
 
-  if (Device.isDevice) {
+  if (Device.isDevice || Platform.OS === 'web') {
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
     let finalStatus = existingStatus;
     if (existingStatus !== 'granted') {
@@ -73,6 +72,10 @@ export async function scheduleEventReminder(event) {
   if (triggerDate <= now) {
     if (eventDate > now) {
       // Event is soon, trigger soon (e.g., 5 seconds from now)
+      if (Platform.OS === 'web') {
+        console.log("Simulating immediate notification on web");
+        return "web-mock-id-immediate-" + event.id;
+      }
       return await Notifications.scheduleNotificationAsync({
         content: {
           title: `Reminder: ${event.title}`,
@@ -92,6 +95,16 @@ export async function scheduleEventReminder(event) {
   }
 
   console.log(`Scheduling for: ${triggerDate.toLocaleString()} (Now: ${now.toLocaleString()})`);
+
+  if (Platform.OS === 'web') {
+    console.log("Local notifications scheduled (simulated on web):", {
+      title: `App Reminder: ${event.title}`,
+      trigger: triggerDate
+    });
+    // For web, we could return a mock ID or use Notification API directly, 
+    // but preventing crash is priority.
+    return "web-mock-id-" + event.id;
+  }
 
   const id = await Notifications.scheduleNotificationAsync({
     content: {
@@ -120,12 +133,20 @@ export async function testNotification() {
 
 // Clear all pending notifications
 export async function cancelAllNotifications() {
+  if (Platform.OS === 'web') {
+    console.log("Cancelled all notifications (simulated on web)");
+    return;
+  }
   await Notifications.cancelAllScheduledNotificationsAsync();
   console.log("All scheduled notifications cancelled");
 }
 
 export async function cancelScheduledNotification(id) {
   if (!id) return;
+  if (Platform.OS === 'web') {
+    console.log("Cancelled notification (simulated on web):", id);
+    return;
+  }
   await Notifications.cancelScheduledNotificationAsync(id);
   console.log("Cancelled notification:", id);
 }

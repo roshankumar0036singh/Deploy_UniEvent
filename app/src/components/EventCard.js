@@ -8,7 +8,7 @@ import { db } from '../lib/firebaseConfig';
 import { useTheme } from '../lib/ThemeContext';
 import { theme } from '../lib/theme';
 
-export default function EventCard({ event, onLike, onShare, isLiked = false, isRegistered = false }) {
+export default function EventCard({ event, onLike, onShare, isLiked = false, isRegistered = false, isRecommended = false }) {
     const navigation = useNavigation();
     const { theme } = useTheme();
     const [hostName, setHostName] = useState(event?.organization || 'Club Name');
@@ -71,6 +71,20 @@ export default function EventCard({ event, onLike, onShare, isLiked = false, isR
                         <Text style={styles.onlineText}>ONLINE</Text>
                     </View>
                 ) : null}
+
+
+                {/* Recommended Badge (Top Right or Center Overlay) */}
+                {isRecommended && (
+                    <View style={{
+                        position: 'absolute', top: 16, left: 16,
+                        backgroundColor: '#FFD700', paddingHorizontal: 10, paddingVertical: 4,
+                        borderRadius: 12, flexDirection: 'row', alignItems: 'center', gap: 4,
+                        zIndex: 10, ...theme.shadows.small
+                    }}>
+                        <Ionicons name="star" size={12} color="#000" />
+                        <Text style={{ fontSize: 10, fontWeight: 'bold', color: '#000' }}>PICK</Text>
+                    </View>
+                )}
             </View>
 
             {/* 2. CONTENT CONTAINER */}
@@ -109,6 +123,12 @@ export default function EventCard({ event, onLike, onShare, isLiked = false, isR
                             <Ionicons name="location" size={16} color={theme.colors.textSecondary} />
                             <Text style={[styles.infoText, { color: theme.colors.textSecondary }]} numberOfLines={1}>
                                 {event.location}
+                            </Text>
+                        </View>
+                        <View style={styles.infoItem}>
+                            <Ionicons name="eye-outline" size={16} color={theme.colors.textSecondary} />
+                            <Text style={[styles.infoText, { color: theme.colors.textSecondary }]}>
+                                {event.views || 0} Views
                             </Text>
                         </View>
                     </View>

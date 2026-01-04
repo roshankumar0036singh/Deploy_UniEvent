@@ -42,6 +42,36 @@ export default function EventDetail({ route, navigation }) {
         }
     }, [event]);
 
+    // Increment View Count (Unique per User)
+    useEffect(() => {
+        const recordView = async () => {
+            if (!user || !eventId) return;
+
+            try {
+                // Check if user has already viewed this event
+                const viewRef = doc(db, `events/${eventId}/views`, user.uid);
+                const viewSnap = await getDoc(viewRef);
+
+                if (!viewSnap.exists()) {
+                    // First time viewing: Record it and increment counter
+                    await setDoc(viewRef, {
+                        viewedAt: new Date().toISOString(),
+                        userId: user.uid,
+                        userName: user.displayName || 'Anonymous'
+                    });
+
+                    await updateDoc(doc(db, 'events', eventId), {
+                        views: increment(1)
+                    });
+                }
+            } catch (error) {
+                console.log("Error recording view:", error);
+            }
+        };
+
+        recordView();
+    }, [eventId, user]); // Run when user loads
+
     // Cleanup logic merged into the main effect or kept simple
     useEffect(() => {
         navigation.setOptions({ headerShown: false }); // Hide default header
@@ -211,7 +241,7 @@ export default function EventDetail({ route, navigation }) {
                         createdAt: new Date().toISOString()
                     });
                     setReminderId(docRef.id);
-                    Alert.alert("Success", "Reminder set for 10 mins before event.");
+                    Alert.alert("Reminder Added"); // Simple match to request
                 } else {
                     Alert.alert("Notice", "Event is too close or passed.");
                 }
@@ -228,7 +258,13 @@ export default function EventDetail({ route, navigation }) {
             return;
         }
 
-        // Paid Event Logic
+        // 1. Custom Form Logic (if not already going and custom form exists)
+        if (event.hasCustomForm && event.customFormSchema?.length > 0 && rsvpStatus !== 'going') {
+            navigation.navigate('EventRegistrationForm', { event });
+            return;
+        }
+
+        // 2. Paid Event Logic
         if (event.isPaid && rsvpStatus !== 'going') {
             if (event.registrationLink) {
                 Alert.alert("External Registration", "This event requires external registration.", [
@@ -242,6 +278,7 @@ export default function EventDetail({ route, navigation }) {
             return;
         }
 
+        // 3. Normal RSVP
         performRsvp();
     };
 
@@ -517,6 +554,14 @@ export default function EventDetail({ route, navigation }) {
                     {isOwner && (
                         <View style={styles.organizerSection}>
                             <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Organizer Tools</Text>
+
+                            <TouchableOpacity
+                                style={[styles.outlinedButton, { borderColor: theme.colors.primary, marginBottom: 12 }]}
+                                onPress={() => navigation.navigate('CreateEvent', { event: event })}
+                            >
+                                <Ionicons name="create-outline" size={22} color={theme.colors.primary} />
+                                <Text style={[styles.outlinedButtonText, { color: theme.colors.primary }]}>Edit Event Details</Text>
+                            </TouchableOpacity>
 
                             <TouchableOpacity
                                 style={[styles.outlinedButton, { borderColor: theme.colors.primary, marginBottom: 12 }]}

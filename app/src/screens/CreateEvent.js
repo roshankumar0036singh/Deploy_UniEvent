@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
-import { addDoc, collection } from 'firebase/firestore';
+import { addDoc, collection, updateDoc, doc } from 'firebase/firestore';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Image, Platform, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
@@ -23,7 +23,7 @@ const CATEGORIES = ['Tech', 'Cultural', 'Sports', 'Workshop', 'Seminar', 'Genera
 const BRANCHES = ['All', 'CSE', 'ETC', 'EE', 'ME', 'Civil'];
 const YEARS = [1, 2, 3, 4];
 
-export default function CreateEvent({ navigation }) {
+export default function CreateEvent({ navigation, route }) {
     const { user } = useAuth();
     const { theme } = useTheme();
     const styles = useMemo(() => getStyles(theme), [theme]);
@@ -55,6 +55,10 @@ export default function CreateEvent({ navigation }) {
     const [upiId, setUpiId] = useState('');
     const [registrationLink, setRegistrationLink] = useState('');
     const [imageUri, setImageUri] = useState(null);
+
+    // Custom Form
+    const [useCustomForm, setUseCustomForm] = useState(false);
+    const [customFormSchema, setCustomFormSchema] = useState([]);
 
     // Google Auth
     const { request, response, promptAsync, getAccessToken } = CalendarService.useCalendarAuth();
@@ -124,6 +128,32 @@ export default function CreateEvent({ navigation }) {
         else setTargetYears([...targetYears, y]);
     };
 
+    const { event } = route.params || {};
+    const isEditMode = !!event;
+
+    useEffect(() => {
+        if (isEditMode) {
+            setTitle(event.title);
+            setDescription(event.description);
+            setCategory(event.category);
+            setLocation(event.location || '');
+            setTargetBranches(event.target?.departments || ['All']);
+            setTargetYears(event.target?.years || []);
+            setStartDate(new Date(event.startAt));
+            setEndDate(new Date(event.endAt));
+            setEventMode(event.eventMode || 'offline');
+            setMeetLink(event.meetLink || '');
+            setIsPaid(event.isPaid);
+            setPrice(event.price?.toString() || '');
+            setUpiId(event.upiId || '');
+            setRegistrationLink(event.registrationLink || '');
+            setImageUri(event.bannerUrl);
+            setUseCustomForm(event.hasCustomForm);
+            setCustomFormSchema(event.customFormSchema || []);
+            navigation.setOptions({ title: 'Edit Event' });
+        }
+    }, [isEditMode]);
+
     const handleCreate = async () => {
         if (!title.trim() || !description.trim() || !category) {
             Alert.alert("Missing Info", "Please fill Title, Description and Category.");
@@ -140,15 +170,16 @@ export default function CreateEvent({ navigation }) {
 
         setLoading(true);
         try {
-            let bannerUrl = null;
-            if (imageUri) {
+            let bannerUrl = imageUri;
+            if (imageUri && imageUri !== event?.bannerUrl && !imageUri.startsWith('http')) {
+                // Only upload if changed and local file
                 try { bannerUrl = await uploadImage(imageUri); }
                 catch { bannerUrl = DEFAULT_BANNERS[0]; }
-            } else {
+            } else if (!bannerUrl) {
                 bannerUrl = DEFAULT_BANNERS[Math.floor(Math.random() * DEFAULT_BANNERS.length)];
             }
 
-            await addDoc(collection(db, 'events'), {
+            const eventData = {
                 title, description, location, category,
                 eventMode, meetLink: eventMode === 'online' ? meetLink : null,
                 startAt: startDate.toISOString(), endAt: endDate.toISOString(),
@@ -156,15 +187,26 @@ export default function CreateEvent({ navigation }) {
                 registrationLink,
                 target: { departments: targetBranches, years: targetYears.length ? targetYears : [1, 2, 3, 4] },
                 bannerUrl,
-                ownerId: user.uid, ownerEmail: user.email, organizerName: user.displayName || 'Club Admin',
-                createdAt: new Date().toISOString(), status: 'active', appealStatus: null
-            });
+                hasCustomForm: useCustomForm,
+                customFormSchema: useCustomForm ? customFormSchema : [],
+            };
 
-            Alert.alert("Success", "Event Created!");
+            if (isEditMode) {
+                await updateDoc(doc(db, 'events', event.id), eventData);
+                Alert.alert("Success", "Event Updated!");
+            } else {
+                await addDoc(collection(db, 'events'), {
+                    ...eventData,
+                    ownerId: user.uid, ownerEmail: user.email, organizerName: user.displayName || 'Club Admin',
+                    createdAt: new Date().toISOString(), status: 'active', appealStatus: null,
+                });
+                Alert.alert("Success", "Event Created!");
+            }
+
             navigation.goBack();
         } catch (e) {
             console.error(e);
-            Alert.alert("Error", "Failed to create event.");
+            Alert.alert("Error", isEditMode ? "Failed to update event." : "Failed to create event.");
         } finally {
             setLoading(false);
         }
@@ -251,7 +293,7 @@ export default function CreateEvent({ navigation }) {
                 <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
                     <Ionicons name="arrow-back" size={24} color={theme.colors.text} />
                 </TouchableOpacity>
-                <Text style={styles.headerTitle}>Create Event</Text>
+                <Text style={styles.headerTitle}>{isEditMode ? 'Edit Event' : 'Create Event'}</Text>
             </View>
 
             <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -440,12 +482,44 @@ export default function CreateEvent({ navigation }) {
                     </View>
                 </View>
 
+                {/* Section 5: Custom Form */}
+                <View style={styles.section}>
+                    <View style={[styles.row, { justifyContent: 'space-between', alignItems: 'center' }]}>
+                        <View>
+                            <Text style={styles.sectionTitle}>Registration Form</Text>
+                            <Text style={{ color: theme.colors.textSecondary, fontSize: 12 }}>Collect specific attendee info?</Text>
+                        </View>
+                        <Switch
+                            value={useCustomForm}
+                            onValueChange={setUseCustomForm}
+                            trackColor={{ false: theme.colors.border, true: theme.colors.primary }}
+                        />
+                    </View>
+
+                    {useCustomForm && (
+                        <View style={{ marginTop: 15 }}>
+                            <TouchableOpacity
+                                style={styles.formBuilderBtn}
+                                onPress={() => navigation.navigate('FormBuilder', {
+                                    initialSchema: customFormSchema,
+                                    onSave: (schema) => setCustomFormSchema(schema)
+                                })}
+                            >
+                                <Ionicons name="construct-outline" size={20} color={theme.colors.primary} />
+                                <Text style={styles.formBuilderText}>
+                                    {customFormSchema.length > 0 ? `Edit Form (${customFormSchema.length} fields)` : 'Configure Form'}
+                                </Text>
+                            </TouchableOpacity>
+                        </View>
+                    )}
+                </View>
+
                 <TouchableOpacity
                     style={[styles.createBtn, { opacity: loading ? 0.7 : 1 }]}
                     onPress={handleCreate}
                     disabled={loading}
                 >
-                    {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.createBtnText}>Create Event</Text>}
+                    {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.createBtnText}>{isEditMode ? 'Update Event' : 'Create Event'}</Text>}
                 </TouchableOpacity>
 
                 <View style={{ height: 100 }} />
@@ -529,5 +603,13 @@ const getStyles = (theme) => StyleSheet.create({
         backgroundColor: theme.colors.primary, padding: 18, borderRadius: 16, alignItems: 'center',
         shadowColor: theme.colors.primary, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, elevation: 5
     },
-    createBtnText: { color: '#fff', fontSize: 18, fontWeight: 'bold' }
+    createBtnText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
+
+    // Form Builder Btn
+    formBuilderBtn: {
+        flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
+        backgroundColor: theme.colors.surface, padding: 16, borderRadius: 12,
+        borderWidth: 1, borderColor: theme.colors.primary, borderStyle: 'dashed'
+    },
+    formBuilderText: { color: theme.colors.primary, fontWeight: 'bold' }
 });

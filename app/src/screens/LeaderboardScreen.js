@@ -98,7 +98,7 @@ export default function LeaderboardScreen({ navigation }) {
 
     const ListHeader = () => (
         <View style={{ marginBottom: 20 }}>
-            <Text style={[styles.title, { color: theme.colors.text, marginBottom: 15 }]}>Leaderboard </Text>
+            <Text style={[styles.title, { color: theme.colors.text, marginBottom: 15 }]}>Leaderboard</Text>
 
             {/* Privacy Toggle */}
             <View style={[styles.toggleCard, { backgroundColor: theme.colors.surface }]}>

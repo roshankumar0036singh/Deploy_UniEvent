@@ -86,14 +86,54 @@ export default function UserFeed({ navigation, headerContent }) {
         return () => unsubscribe();
     }, [role, user]);
 
-    // Recommendation Logic (Simple: Upcoming events in future)
+    // Recommendation Logic: Views + User History + Freshness
     const getRecommendedEvents = () => {
         const now = new Date();
-        // Just pick top 5 upcoming events for now as recommendation
-        return events
-            .filter(e => new Date(e.startAt) >= now)
-            .sort((a, b) => new Date(a.startAt) - new Date(b.startAt))
-            .slice(0, 5);
+        const upcomingEvents = events.filter(e => new Date(e.startAt) >= now);
+
+        if (upcomingEvents.length === 0) return [];
+
+        // 1. Analyze User History (Favorite Categories)
+        const categoryCounts = {};
+        events.filter(e => participatingIds.includes(e.id)).forEach(e => {
+            if (e.category) {
+                categoryCounts[e.category] = (categoryCounts[e.category] || 0) + 1;
+            }
+        });
+
+        // Find top category
+        let favoriteCategory = null;
+        let maxCount = 0;
+        Object.entries(categoryCounts).forEach(([cat, count]) => {
+            if (count > maxCount) {
+                maxCount = count;
+                favoriteCategory = cat;
+            }
+        });
+
+        // 2. Score Events
+        const scoredEvents = upcomingEvents.map(event => {
+            let score = 0;
+
+            // A. Views (Popularity) - 1 point per 2 views (0.5)
+            score += (event.views || 0) * 0.5;
+
+            // B. Category Match (Personalization)
+            if (favoriteCategory && event.category === favoriteCategory) {
+                score += 20; // Big boost
+            } else if (categoryCounts[event.category]) {
+                score += 5; // Small boost for any previously attended category
+            }
+
+            // C. Freshness (Within 7 days)
+            const daysUntil = (new Date(event.startAt) - now) / (1000 * 60 * 60 * 24);
+            if (daysUntil <= 7) score += 10;
+
+            return { ...event, score };
+        });
+
+        // 3. Sort by Score Descending
+        return scoredEvents.sort((a, b) => b.score - a.score).slice(0, 3);
     };
 
     const getFilteredEvents = () => {
@@ -236,7 +276,7 @@ export default function UserFeed({ navigation, headerContent }) {
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20 }}>
                     {getRecommendedEvents().map(event => (
                         <View key={event.id} style={{ width: 280, marginRight: 15 }}>
-                            <EventCard event={event} />
+                            <EventCard event={event} isRecommended={true} />
                         </View>
                     ))}
                     {getRecommendedEvents().length === 0 && (
