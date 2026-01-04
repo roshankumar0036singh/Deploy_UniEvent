@@ -5,10 +5,10 @@ import { doc, getDoc } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
 import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { db } from '../lib/firebaseConfig';
-import { useTheme } from '../lib/ThemeContext';
 import { theme } from '../lib/theme';
+import { useTheme } from '../lib/ThemeContext';
 
-export default function EventCard({ event, onLike, onShare, isLiked = false, isRegistered = false, isRecommended = false }) {
+export default function EventCard({ event, onLike, onShare, isLiked = false, isRegistered = false, isRecommended = false, showRegisterButton = true, style }) {
     const navigation = useNavigation();
     const { theme } = useTheme();
     const [hostName, setHostName] = useState(event?.organization || 'Club Name');
@@ -39,7 +39,7 @@ export default function EventCard({ event, onLike, onShare, isLiked = false, isR
 
     return (
         <TouchableOpacity
-            style={[styles.card, { backgroundColor: theme.colors.surface, ...theme.shadows.default }]}
+            style={[styles.card, { backgroundColor: theme.colors.surface, ...theme.shadows.default }, style]}
             activeOpacity={0.9}
             onPress={() => navigation.navigate('EventDetail', { eventId: event.id })}
         >
@@ -142,8 +142,9 @@ export default function EventCard({ event, onLike, onShare, isLiked = false, isR
                 </View>
 
                 {/* FOOTER ACTION */}
-                {isRegistered ? (
-                    <View style={[styles.registerBtn, { backgroundColor: theme.colors.success, ...theme.shadows.default }]}>
+                {showRegisterButton && (
+                    isRegistered ? (
+                        <View style={[styles.registerBtn, { backgroundColor: theme.colors.success, ...theme.shadows.default }]}>
                         <Ionicons name="checkmark-circle" size={16} color="#fff" style={{ marginRight: 4 }} />
                         <Text style={styles.registerText}>REGISTERED</Text>
                     </View>
@@ -154,7 +155,8 @@ export default function EventCard({ event, onLike, onShare, isLiked = false, isR
                     >
                         <Text style={styles.registerText}>REGISTER</Text>
                     </TouchableOpacity>
-                )}
+                )
+            )}
 
             </View>
         </TouchableOpacity>

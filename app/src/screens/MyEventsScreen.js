@@ -62,7 +62,11 @@ export default function MyEventsScreen({ navigation }) {
 
     const renderItem = ({ item }) => (
         <View style={styles.cardContainer}>
-            <EventCard event={item} />
+            <EventCard 
+                event={item} 
+                showRegisterButton={false}
+                style={{ marginBottom: 0 }}
+            />
 
             <View style={[styles.actionBar, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
                 {/* Status */}
