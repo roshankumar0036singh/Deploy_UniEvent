@@ -99,7 +99,7 @@ export async function sendCertificatesForEvent(eventId: string, ownerId: string)
 
         } catch (err) {
             console.error(`Error processing ${p.email}:`, err);
-            results.push({ email: p.email, status: 'error', error: err.message });
+            results.push({ email: p.email, status: 'error', error: (err as any).message });
         }
     }
 
