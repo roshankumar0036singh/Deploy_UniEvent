@@ -38,9 +38,14 @@ if (Platform.OS === 'web') {
 
 export { auth };
 
+    import { getMessaging } from 'firebase/messaging';
+
 // Initialize other services
 export const db = getFirestore(app);
 export const functions = getFunctions(app);
 export const storage = getStorage(app);
+export const messaging = getMessaging(app);
+
+export const VAPID_KEY = "BP9_8PFuG_8PjpTcK8bXKVSe1G8bOJUTC3XpBusukPPJFXzSn4mIruzTboZPnID_gpS4rG1QtxJVaSGoR6wzCdI"; // Provided by user
 
 export default app;

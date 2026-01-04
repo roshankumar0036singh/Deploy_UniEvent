@@ -26,7 +26,33 @@ export async function registerForPushNotificationsAsync() {
     });
   }
 
-  if (Device.isDevice || Platform.OS === 'web') {
+  if (Platform.OS === 'web') {
+      try {
+        const { messaging, VAPID_KEY } = require('./firebaseConfig');
+        const { getToken } = require('firebase/messaging');
+        
+        // Request permission specifically for Web
+        const permission = await Notification.requestPermission();
+        if (permission === 'granted') {
+            // Register SW explicitly
+            if ('serviceWorker' in navigator) {
+                const registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+                token = await getToken(messaging, { 
+                    vapidKey: VAPID_KEY,
+                    serviceWorkerRegistration: registration
+                });
+                console.log("Web Push Token:", token);
+            }
+        } else {
+            console.log("Web Notification permission denied");
+        }
+      } catch (e) {
+          console.error("Error getting web push token:", e);
+      }
+      return token;
+  }
+
+  if (Device.isDevice) {
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
     let finalStatus = existingStatus;
     if (existingStatus !== 'granted') {
