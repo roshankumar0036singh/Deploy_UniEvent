@@ -1,6 +1,9 @@
 import * as admin from "firebase-admin";
 import * as functions from "firebase-functions";
 
+const { Expo } = require('expo-server-sdk');
+const expo = new Expo();
+
 export const onEventCreate = functions.firestore
   .document("events/{eventId}")
   .onCreate(async (snapshot, context) => {
@@ -23,37 +26,52 @@ export const onEventCreate = functions.firestore
       },
     });
 
-    // Notification Logic: targeting
-    // For MVP, we'll notify users who match the department
-    // In a real app, we'd use a Collection Group query or iterate users (expensive)
-    // Here we'll just query users in that department to demonstrate flow
+    // Broadcast Notification Logic
+    // Fetch all users with push tokens
+    // Ideally use topics or pagination for large user bases
+    const usersSnapshot = await db.collection('users').get();
     
-    const targetDepts = eventData.target?.departments || [];
-    
-    if (targetDepts.length > 0 && !targetDepts.includes('All')) {
-        const usersRef = db.collection('users');
-        // Note: 'in' query allows up to 10 values
-        const q = usersRef.where('dept', 'in', targetDepts);
+    const messages: any[] = [];
+    const batch = db.batch();
+
+    usersSnapshot.forEach(userDoc => {
+        const userData = userDoc.data();
         
-        const userSnap = await q.get();
-        
-        const batch = db.batch();
-        
-        userSnap.forEach(userDoc => {
-            const notifRef = userDoc.ref.collection('notifications').doc();
-            batch.set(notifRef, {
-                title: 'New Event Alert!',
-                body: `New event "${eventData.title}" in your department.`,
-                eventId: eventId,
-                createdAt: admin.firestore.FieldValue.serverTimestamp(),
-                read: false
-            });
+        // 1. In-App Notification
+        const notifRef = userDoc.ref.collection('notifications').doc();
+        batch.set(notifRef, {
+            title: 'New Event Alert! 📢',
+            body: `Check out: "${eventData.title}"`,
+            eventId: eventId,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            read: false
         });
-        
-        await batch.commit();
-        console.log(`Sent notifications to ${userSnap.size} users.`);
-    } else {
-         // Notify everyone or handle 'All' case - skipping for brevity/perf in demo
-         console.log('Skipping mass notification for All departments in demo.');
+
+        // 2. Push Notification
+        const pushToken = userData.pushToken;
+        if (pushToken && Expo.isExpoPushToken(pushToken)) {
+            messages.push({
+                to: pushToken,
+                sound: 'default',
+                title: 'New Event Alert! 📢',
+                body: `New Event: ${eventData.title}`,
+                data: { eventId: eventId, url: `/event/${eventId}` },
+            });
+        }
+    });
+
+    await batch.commit();
+
+    // Send Push Notifications
+    if (messages.length > 0) {
+        let chunks = expo.chunkPushNotifications(messages);
+        for (let chunk of chunks) {
+            try {
+                await expo.sendPushNotificationsAsync(chunk);
+            } catch (error) {
+                console.error("Error sending chunks", error);
+            }
+        }
     }
+    console.log(`Sent notifications to ${usersSnapshot.size} users.`);
   });

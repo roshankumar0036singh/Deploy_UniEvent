@@ -2,9 +2,9 @@ import { Ionicons } from '@expo/vector-icons';
 // import { Picker } from '@react-native-picker/picker'; // Removed native picker
 import { LinearGradient } from 'expo-linear-gradient';
 import { updateProfile } from 'firebase/auth';
-import { collection, doc, getCountFromServer, getDoc, getDocs, updateDoc } from 'firebase/firestore';
+import { collection, doc, getCountFromServer, getDoc, updateDoc } from 'firebase/firestore';
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Platform, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
 import PremiumButton from '../components/PremiumButton';
 import PremiumInput from '../components/PremiumInput';
 import ScreenWrapper from '../components/ScreenWrapper';
@@ -125,6 +125,33 @@ export default function ProfileScreen({ navigation }) {
         } catch (error) {
             console.error(error);
             Alert.alert("Error", "Failed to update profile");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleSendDailyDigest = async () => {
+        if (loading) return;
+        setLoading(true);
+        try {
+            const idToken = await user.getIdToken();
+            const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
+            
+            const res = await fetch(`${API_URL}/api/sendDailyDigest`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${idToken}`
+                }
+            });
+
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.message || 'Failed');
+
+            Alert.alert("Success", data.message || `Digest sent! Events today: ${data.count}`);
+        } catch (error) {
+            console.error(error);
+            Alert.alert("Error", error.message || "Failed to send digest");
         } finally {
             setLoading(false);
         }
@@ -306,6 +333,14 @@ export default function ProfileScreen({ navigation }) {
                                             icon="calendar-outline"
                                             label="My Created Events"
                                             onPress={() => navigation.navigate('MyEvents')}
+                                            theme={theme}
+                                            styles={styles}
+                                        />
+                                        <View style={styles.divider} />
+                                        <MenuItem
+                                            icon="notifications-outline"
+                                            label="Send Daily Update"
+                                            onPress={handleSendDailyDigest}
                                             theme={theme}
                                             styles={styles}
                                         />

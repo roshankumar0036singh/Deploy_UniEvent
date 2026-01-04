@@ -111,7 +111,94 @@ app.post('/api/sendCertificates', validateFirebaseIdToken, async (req: express.R
 app.get('/', (req, res) => {
   res.send('UniEvent Backend is Running');
 });
+app.post('/api/sendDailyDigest', validateFirebaseIdToken, async (req: express.Request, res: express.Response) => {
+    try {
+        // Optional: Check if admin
+        const user = (req as any).user;
+        if (user.role !== 'admin') {
+             res.status(403).json({ message: 'Unauthorized: Only admins can trigger this.' });
+             return;
+        }
 
+        // const { sendDailyDigest } = require('./dailyDigest'); // Unused
+
+        // Since sendDailyDigest is an onCall, we can reuse logic or extract logic.
+        // But onCall expects (data, context).
+        // Let's just run logic here or duplicate/extract.
+        // Actually, better to import the Logic function if I separated it.
+        // But since I wrote it as `functions.https.onCall`, it's not directly callable as a plain JS function easily without mock.
+        
+        // Let's rewrite dailyDigest to be a shared function or just call it if it was separate.
+        // For simplicity in this structure, I will copy the logic or simpler: use the firebase-admin directly here 
+        // OR better: Invoke the function? No.
+        
+        // I will implement the logic directly here for the API endpoint to ensure it works smoothly with Express req/res.
+        
+        const db = admin.firestore();
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const tomorrow = new Date(today);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+
+        const eventsRef = db.collection('events');
+        const snapshot = await eventsRef
+            .where('startAt', '>=', today.toISOString())
+            .where('startAt', '<', tomorrow.toISOString())
+            .get();
+
+        const count = snapshot.size;
+
+        if (count > 0) {
+             const usersSnapshot = await db.collection('users').get();
+             const messages: any[] = [];
+             const batch = db.batch();
+             
+             // Lazy import Expo to ensure it works
+             const { Expo } = require('expo-server-sdk');
+             const expo = new Expo();
+
+             usersSnapshot.forEach(userDoc => {
+                const userData = userDoc.data();
+                const pushToken = userData.pushToken;
+                
+                // In-App
+                const notifRef = userDoc.ref.collection('notifications').doc();
+                batch.set(notifRef, {
+                    title: 'Daily Digest 📅',
+                    body: `There are ${count} events happening today!`,
+                    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                    read: false
+                });
+
+                if (pushToken && Expo.isExpoPushToken(pushToken)) {
+                    messages.push({
+                        to: pushToken,
+                        sound: 'default',
+                        title: 'Daily Digest 📅',
+                        body: `There are ${count} events happening today!`,
+                        data: { url: '/home' },
+                    });
+                }
+             });
+             
+             await batch.commit();
+             
+             if (messages.length > 0) {
+                let chunks = expo.chunkPushNotifications(messages);
+                for (let chunk of chunks) {
+                    try { await expo.sendPushNotificationsAsync(chunk); } catch(e){ console.error(e); }
+                }
+             }
+        }
+
+        res.json({ success: true, count, message: `Digest sent for ${count} events to all users.` });
+    } catch (error) {
+        console.error("Digest Error", error);
+        res.status(500).json({ error: (error as Error).message });
+    }
+});
+
+// Start Server
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
