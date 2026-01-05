@@ -173,17 +173,30 @@ export default function UserFeed({ navigation, headerContent }) {
         // Common Date Threshold
         const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
+        // 2. Tab/Category Filtering
+
         if (activeFilter === 'Upcoming') {
-            filtered = filtered.filter(e => new Date(e.startAt) >= yesterday);
+            // Show events that ends in the future (includes ongoing)
+            filtered = filtered.filter(e => {
+                const end = e.endAt ? new Date(e.endAt) : new Date(new Date(e.startAt).getTime() + 24 * 60 * 60 * 1000); // Fallback to 24h if no endAt
+                return end >= now;
+            });
             // Sort: Closest upcoming first
             filtered.sort((a, b) => new Date(a.startAt) - new Date(b.startAt));
         } else if (activeFilter === 'Past') {
-            filtered = filtered.filter(e => new Date(e.startAt) < yesterday);
+            // Show events that have ended
+            filtered = filtered.filter(e => {
+                const end = e.endAt ? new Date(e.endAt) : new Date(new Date(e.startAt).getTime() + 24 * 60 * 60 * 1000);
+                return end < now;
+            });
             // Sort: Most recent past first
             filtered.sort((a, b) => new Date(b.startAt) - new Date(a.startAt));
         } else {
-            // Category filters - ALSO HIDE PAST EVENTS
-            filtered = filtered.filter(e => e.category === activeFilter && new Date(e.startAt) >= yesterday);
+            // Category filters - HIDE ENDED EVENTS
+            filtered = filtered.filter(e => {
+                const end = e.endAt ? new Date(e.endAt) : new Date(new Date(e.startAt).getTime() + 24 * 60 * 60 * 1000);
+                return e.category === activeFilter && end >= now;
+            });
             // Sort: Closest upcoming first for categories too
             filtered.sort((a, b) => new Date(a.startAt) - new Date(b.startAt));
         }
@@ -248,18 +261,20 @@ export default function UserFeed({ navigation, headerContent }) {
     );
 
     const renderEvent = ({ item }) => (
-        <EventCard
-            event={item}
-            isRegistered={participatingIds.includes(item.id)}
-            onLike={() => { }}
-            onShare={async () => {
-                try {
-                    await Share.share({
-                        message: `Check out this event: ${item.title} at ${item.location}!`,
-                    });
-                } catch (e) { console.log(e); }
-            }}
-        />
+        <View style={{ paddingHorizontal: 20 }}>
+            <EventCard
+                event={item}
+                isRegistered={participatingIds.includes(item.id)}
+                onLike={() => { }}
+                onShare={async () => {
+                    try {
+                        await Share.share({
+                            message: `Check out this event: ${item.title} at ${item.location}!`,
+                        });
+                    } catch (e) { console.log(e); }
+                }}
+            />
+        </View>
     );
 
     const headerTranslateY = scrollY.interpolate({
@@ -275,7 +290,7 @@ export default function UserFeed({ navigation, headerContent }) {
                 <Text style={styles.sectionTitle}>RECOMMENDED FOR YOU</Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20 }}>
                     {getRecommendedEvents().map(event => (
-                        <View key={event.id} style={{ width: 280, marginRight: 15 }}>
+                        <View key={event.id} style={{ width: 320, marginRight: 15 }}>
                             <EventCard event={event} isRecommended={true} />
                         </View>
                     ))}

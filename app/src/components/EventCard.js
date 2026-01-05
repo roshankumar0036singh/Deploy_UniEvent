@@ -44,10 +44,10 @@ export default function EventCard({ event, onLike, onShare, isLiked = false, isR
             onPress={() => navigation.navigate('EventDetail', { eventId: event.id })}
         >
             {/* 1. MAIN BANNER IMAGE (Top Layer) */}
-            <View style={styles.bannerContainer}>
+            <View style={[styles.bannerContainer, isRecommended && { height: 140 }]}>
                 <Image
                     source={{ uri: event.bannerUrl || 'https://via.placeholder.com/800x400' }}
-                    style={styles.bannerImage}
+                    style={[styles.bannerImage, isRecommended && { height: 140 }]} // Compact height for recommended
                     resizeMode="cover"
                 />
                 <LinearGradient
@@ -188,12 +188,11 @@ const styles = StyleSheet.create({
         width: '100%',
     },
     bannerContainer: {
-        height: 180, // Even Taller banner for impact
+        height: 180, // Default height
         width: '100%',
         overflow: 'hidden',
         position: 'relative',
         borderRadius: 16,
-
     },
     bannerImage: {
         width: '100%',

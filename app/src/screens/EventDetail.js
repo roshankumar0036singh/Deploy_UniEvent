@@ -927,7 +927,7 @@ export default function EventDetail({ route, navigation }) {
                             </View>
                             <View style={styles.detailContent}>
                                 <Text style={[styles.detailLabel, { color: theme.colors.textSecondary }]}>Location</Text>
-                                <Text style={[styles.detailValue, { color: theme.colors.text }]}>{event.location}</Text>
+                                <Text style={[styles.detailValue, { color: theme.colors.text }]}>{event.eventMode === 'online' ? 'Online' : event.location}</Text>
                             </View>
                         </View>
                     </View>
