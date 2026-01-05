@@ -686,27 +686,20 @@ export default function EventDetail({ route, navigation }) {
             `;
 
             if (Platform.OS === 'web') {
-                // Custom Iframe Print to ensure only certificate is printed
-                const iframe = document.createElement('iframe');
-                iframe.style.position = 'absolute';
-                iframe.style.top = '-10000px';
-                iframe.style.left = '-10000px';
-                document.body.appendChild(iframe);
+                // Open separate window for reliable printing on mobile web
+                const printWindow = window.open('', '_blank');
+                if (printWindow) {
+                    printWindow.document.write(html);
+                    printWindow.document.close();
 
-                iframe.contentDocument.open();
-                iframe.contentDocument.write(html);
-                iframe.contentDocument.close();
-
-                // Delay to allow Base64 and styles to render
-                setTimeout(() => {
-                    iframe.contentWindow.focus();
-                    iframe.contentWindow.print();
+                    // Allow styles and fonts to load
                     setTimeout(() => {
-                        if (document.body.contains(iframe)) {
-                            document.body.removeChild(iframe);
-                        }
+                        printWindow.focus();
+                        printWindow.print();
                     }, 500);
-                }, 500);
+                } else {
+                    Alert.alert("Blocked", "Please allow pop-ups to download the certificate.");
+                }
             } else {
                 const { uri } = await Print.printToFileAsync({ html });
 
