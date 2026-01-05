@@ -1,0 +1,97 @@
+[debug] [2026-01-05T06:31:09.552Z] ----------------------------------------------------------------------
+[debug] [2026-01-05T06:31:09.555Z] Command:       C:\Program Files\nodejs\node.exe D:\Github\Deploy_UniEvent\cloud-functions\node_modules\firebase-tools\lib\bin\firebase.js emulators:start --only functions
+[debug] [2026-01-05T06:31:09.555Z] CLI Version:   13.35.1
+[debug] [2026-01-05T06:31:09.555Z] Platform:      win32
+[debug] [2026-01-05T06:31:09.555Z] Node Version:  v22.19.0
+[debug] [2026-01-05T06:31:09.556Z] Time:          Mon Jan 05 2026 12:01:09 GMT+0530 (India Standard Time)
+[debug] [2026-01-05T06:31:09.556Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2026-01-05T06:31:09.756Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] Failed to authenticate, have you run firebase login?
+[warn] !  emulators: You are not currently authenticated so some features may not work correctly. Please run firebase login to authenticate the CLI. 
+[info] i  emulators: Starting emulators: functions {"metadata":{"emulator":{"name":"hub"},"message":"Starting emulators: functions"}}
+[debug] [2026-01-05T06:31:09.793Z] [logging] Logging Emulator only supports listening on one address (127.0.0.1). Not listening on ::1
+[debug] [2026-01-05T06:31:09.793Z] assigned listening specs for emulators {"user":{"hub":[{"address":"127.0.0.1","family":"IPv4","port":4400},{"address":"::1","family":"IPv6","port":4400}],"ui":[{"address":"127.0.0.1","family":"IPv4","port":4000},{"address":"::1","family":"IPv6","port":4000}],"logging":[{"address":"127.0.0.1","family":"IPv4","port":4500}]},"metadata":{"message":"assigned listening specs for emulators"}}
+[debug] [2026-01-05T06:31:09.796Z] [hub] writing locator at C:\Users\Roshan\AppData\Local\Temp\hub-eventloop-c3310.json
+[debug] [2026-01-05T06:31:09.807Z] [functions] Functions Emulator only supports listening on one address (127.0.0.1). Not listening on ::1
+[debug] [2026-01-05T06:31:09.807Z] [eventarc] Eventarc Emulator only supports listening on one address (127.0.0.1). Not listening on ::1
+[debug] [2026-01-05T06:31:09.807Z] [tasks] Cloud Tasks Emulator only supports listening on one address (127.0.0.1). Not listening on ::1
+[debug] [2026-01-05T06:31:09.807Z] late-assigned ports for functions and eventarc emulators {"user":{"hub":[{"address":"127.0.0.1","family":"IPv4","port":4400},{"address":"::1","family":"IPv6","port":4400}],"ui":[{"address":"127.0.0.1","family":"IPv4","port":4000},{"address":"::1","family":"IPv6","port":4000}],"logging":[{"address":"127.0.0.1","family":"IPv4","port":4500}],"functions":[{"address":"127.0.0.1","family":"IPv4","port":5001}],"eventarc":[{"address":"127.0.0.1","family":"IPv4","port":9299}],"tasks":[{"address":"127.0.0.1","family":"IPv4","port":9499}]},"metadata":{"message":"late-assigned ports for functions and eventarc emulators"}}
+[warn] !  functions: The following emulators are not running, calls to these services from the Functions emulator will affect production: apphosting, auth, firestore, database, hosting, pubsub, storage, dataconnect {"metadata":{"emulator":{"name":"functions"},"message":"The following emulators are not running, calls to these services from the Functions emulator will affect production: \u001b[1mapphosting, auth, firestore, database, hosting, pubsub, storage, dataconnect\u001b[22m"}}
+[debug] [2026-01-05T06:31:09.811Z] No OAuth tokens found
+[debug] [2026-01-05T06:31:09.811Z] No OAuth tokens found
+[debug] [2026-01-05T06:31:09.811Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-01-05T06:31:09.812Z] Failed to get Admin SDK config for eventloop-c3310, falling back to cache Failed to get Admin SDK for Firebase project eventloop-c3310. Please make sure the project exists and your account has permission to access it. {"name":"FirebaseError","children":[],"exit":2,"message":"Failed to get Admin SDK for Firebase project eventloop-c3310. Please make sure the project exists and your account has permission to access it.","original":{"name":"FirebaseError","children":[],"exit":1,"message":"Failed to authenticate, have you run \u001b[1mfirebase login\u001b[22m?","original":{},"status":500},"status":500}
+[warn] !  functions: Unable to fetch project Admin SDK configuration, Admin SDK behavior in Cloud Functions emulator may be incorrect. {"metadata":{"emulator":{"name":"functions"},"message":"Unable to fetch project Admin SDK configuration, Admin SDK behavior in Cloud Functions emulator may be incorrect."}}
+[info] i  functions: Watching "D:\Github\Deploy_UniEvent\cloud-functions" for Cloud Functions... {"metadata":{"emulator":{"name":"functions"},"message":"Watching \"D:\\Github\\Deploy_UniEvent\\cloud-functions\" for Cloud Functions..."}}
+[debug] [2026-01-05T06:31:09.835Z] Validating nodejs source
+[warn] !  functions: package.json indicates an outdated version of firebase-functions. Please upgrade using npm install --save firebase-functions@latest in your functions directory. 
+[warn] !  functions: Please note that there will be breaking changes when you upgrade. 
+[debug] [2026-01-05T06:31:11.398Z] > [functions] package.json contents: {
+  "name": "functions",
+  "scripts": {
+    "build": "tsc",
+    "serve": "npm run build && firebase emulators:start --only functions",
+    "shell": "npm run build && firebase functions:shell",
+    "start": "node lib/server.js",
+    "deploy": "firebase deploy --only functions",
+    "logs": "firebase functions:log"
+  },
+  "engines": {
+    "node": "18"
+  },
+  "main": "lib/index.js",
+  "dependencies": {
+    "@types/dotenv": "^6.1.1",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "expo-server-sdk": "^4.0.0",
+    "express": "^5.2.1",
+    "firebase-admin": "^11.11.1",
+    "firebase-functions": "^4.0.0",
+    "pdf-lib": "^1.17.1",
+    "resend": "^6.6.0"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.0",
+    "@types/express": "^4.17.0",
+    "firebase-functions-test": "^3.1.0",
+    "firebase-tools": "^13.0.0",
+    "typescript": "^5.3.0"
+  },
+  "private": true
+}
+[debug] [2026-01-05T06:31:11.399Z] Building nodejs source
+[debug] [2026-01-05T06:31:11.399Z] Failed to find version of module node: reached end of search path D:\Github\Deploy_UniEvent\cloud-functions\node_modules
+[warn] !  functions: Your requested "node" version "18" doesn't match your global version "22". Using node@22 from host. 
+[info] i  functions: Loaded environment variables from .env. 
+[info] i  functions: You are using a version of firebase-functions SDK (4.9.0) that does not have support for the newest Firebase Extensions features. Please update firebase-functions SDK to >=5.1.0 to use them correctly 
+[debug] [2026-01-05T06:31:11.402Z] Could not find functions.yaml. Must use http discovery
+[debug] [2026-01-05T06:31:11.411Z] Found firebase-functions binary at 'D:\Github\Deploy_UniEvent\cloud-functions\node_modules\.bin\firebase-functions'
+[info] Serving at port 8727
+
+[debug] [2026-01-05T06:31:11.969Z] Got response from /__/functions.yaml {"endpoints":{"sendDailyDigest":{"platform":"gcfv1","labels":{},"availableMemoryMb":null,"timeoutSeconds":null,"minInstances":null,"maxInstances":null,"ingressSettings":null,"serviceAccountEmail":null,"vpc":null,"callableTrigger":{},"entryPoint":"sendDailyDigest"},"checkUpcomingEvents":{"platform":"gcfv1","availableMemoryMb":null,"timeoutSeconds":null,"minInstances":null,"maxInstances":null,"ingressSettings":null,"serviceAccountEmail":null,"vpc":null,"scheduleTrigger":{"schedule":"every 1 minutes","retryConfig":{"retryCount":null,"maxDoublings":null,"maxRetryDuration":null,"maxBackoffDuration":null,"minBackoffDuration":null},"timeZone":null},"labels":{},"entryPoint":"checkUpcomingEvents"},"onEventCreate":{"platform":"gcfv1","availableMemoryMb":null,"timeoutSeconds":null,"minInstances":null,"maxInstances":null,"ingressSettings":null,"serviceAccountEmail":null,"vpc":null,"eventTrigger":{"eventType":"providers/cloud.firestore/eventTypes/document.create","eventFilters":{"resource":"projects/eventloop-c3310/databases/(default)/documents/events/{eventId}"},"retry":false},"labels":{},"entryPoint":"onEventCreate"},"checkReminders":{"platform":"gcfv1","availableMemoryMb":null,"timeoutSeconds":null,"minInstances":null,"maxInstances":null,"ingressSettings":null,"serviceAccountEmail":null,"vpc":null,"scheduleTrigger":{"schedule":"every 1 minutes","retryConfig":{"retryCount":null,"maxDoublings":null,"maxRetryDuration":null,"maxBackoffDuration":null,"minBackoffDuration":null},"timeZone":null},"labels":{},"entryPoint":"checkReminders"},"calculateReputation":{"platform":"gcfv1","labels":{},"availableMemoryMb":null,"timeoutSeconds":null,"minInstances":null,"maxInstances":null,"ingressSettings":null,"serviceAccountEmail":null,"vpc":null,"callableTrigger":{},"entryPoint":"calculateReputation"},"setRole":{"platform":"gcfv1","labels":{},"availableMemoryMb":null,"timeoutSeconds":null,"minInstances":null,"maxInstances":null,"ingressSettings":null,"serviceAccountEmail":null,"vpc":null,"callableTrigger":{},"entryPoint":"setRole"}},"specVersion":"v1alpha1","requiredAPIs":[{"api":"cloudscheduler.googleapis.com","reason":"Needed for scheduled functions."}]}
+[info] +  functions: Loaded functions definitions from source: sendDailyDigest, checkUpcomingEvents, onEventCreate, checkReminders, calculateReputation, setRole. {"metadata":{"emulator":{"name":"functions"},"message":"Loaded functions definitions from source: sendDailyDigest, checkUpcomingEvents, onEventCreate, checkReminders, calculateReputation, setRole."}}
+[info] +  functions[us-central1-sendDailyDigest]: http function initialized (http://127.0.0.1:5001/eventloop-c3310/us-central1/sendDailyDigest). {"metadata":{"emulator":{"name":"functions"},"message":"\u001b[1mhttp\u001b[22m function initialized (http://127.0.0.1:5001/eventloop-c3310/us-central1/sendDailyDigest)."}}
+[info] i  functions[us-central1-checkUpcomingEvents]: function ignored because the pubsub emulator does not exist or is not running. {"metadata":{"emulator":{"name":"functions"},"message":"function ignored because the pubsub emulator does not exist or is not running."}}
+[info] i  functions[us-central1-onEventCreate]: function ignored because the firestore emulator does not exist or is not running. {"metadata":{"emulator":{"name":"functions"},"message":"function ignored because the firestore emulator does not exist or is not running."}}
+[info] i  functions[us-central1-checkReminders]: function ignored because the pubsub emulator does not exist or is not running. {"metadata":{"emulator":{"name":"functions"},"message":"function ignored because the pubsub emulator does not exist or is not running."}}
+[info] +  functions[us-central1-calculateReputation]: http function initialized (http://127.0.0.1:5001/eventloop-c3310/us-central1/calculateReputation). {"metadata":{"emulator":{"name":"functions"},"message":"\u001b[1mhttp\u001b[22m function initialized (http://127.0.0.1:5001/eventloop-c3310/us-central1/calculateReputation)."}}
+[info] +  functions[us-central1-setRole]: http function initialized (http://127.0.0.1:5001/eventloop-c3310/us-central1/setRole). {"metadata":{"emulator":{"name":"functions"},"message":"\u001b[1mhttp\u001b[22m function initialized (http://127.0.0.1:5001/eventloop-c3310/us-central1/setRole)."}}
+[debug] [2026-01-05T06:31:16.029Z] Could not find VSCode notification endpoint: FetchError: request to http://localhost:40001/vscode/notify failed, reason: . If you are not running the Firebase Data Connect VSCode extension, this is expected and not an issue.
+[info] 
+┌─────────────────────────────────────────────────────────────┐
+│ ✔  All emulators ready! It is now safe to connect your app. │
+│ i  View Emulator UI at http://127.0.0.1:4000/               │
+└─────────────────────────────────────────────────────────────┘
+
+┌───────────┬────────────────┬─────────────────────────────────┐
+│ Emulator  │ Host:Port      │ View in Emulator UI             │
+├───────────┼────────────────┼─────────────────────────────────┤
+│ Functions │ 127.0.0.1:5001 │ http://127.0.0.1:4000/functions │
+└───────────┴────────────────┴─────────────────────────────────┘
+  Emulator Hub host: 127.0.0.1 port: 4400
+  Other reserved ports: 4500
+
+Issues? Report them at https://github.com/firebase/firebase-tools/issues and attach the *-debug.log files.
+ 

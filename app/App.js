@@ -170,7 +170,7 @@ const linking = {
           Home: 'home',
         },
       },
-      EventDetail: 'event/:eventId',
+      EventDetail: 'event/:eventId/:action?',
     },
   },
 };
@@ -272,8 +272,8 @@ function AppContent() {
           pushToken: token
         }).catch(err => console.log("Failed to save push token", err));
 
-        // Global Automation Check
-        checkAndTriggerAutomations(user.uid);
+        // Global Automation Check - DISABLED (Manual feedback sending only)
+        // checkAndTriggerAutomations(user.uid);
       }
     });
 

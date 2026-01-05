@@ -1,21 +1,27 @@
-import { addDoc, collection, deleteDoc, doc, getDocs, query, updateDoc, where } from 'firebase/firestore';
+import { Ionicons } from '@expo/vector-icons';
+import { addDoc, collection, deleteDoc, deleteField, doc, getDocs, query, updateDoc, where } from 'firebase/firestore';
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, Image, Modal, RefreshControl, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import ScreenWrapper from '../components/ScreenWrapper';
 import { useAuth } from '../lib/AuthContext';
 import { db } from '../lib/firebaseConfig';
 import { useTheme } from '../lib/ThemeContext';
-
-import ScreenWrapper from '../components/ScreenWrapper';
 
 export default function MobileAdmin() {
   const { theme } = useTheme();
   const styles = useMemo(() => getStyles(theme), [theme]);
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState('clubs'); // 'clubs' or 'appeals'
-  const [clubs, setClubs] = useState([]);
+  const [activeTab, setActiveTab] = useState('events');
+  const [events, setEvents] = useState([]);
+  const [requests, setRequests] = useState([]);
   const [appeals, setAppeals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+
+  // Suspension Modal State
+  const [suspendModalVisible, setSuspendModalVisible] = useState(false);
+  const [suspendReason, setSuspendReason] = useState('');
+  const [targetEventId, setTargetEventId] = useState(null);
 
   useEffect(() => {
     fetchData();
@@ -24,19 +30,32 @@ export default function MobileAdmin() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      if (activeTab === 'clubs') {
-          const q = query(collection(db, 'clubs'), where('approved', '==', false));
-          const snapshot = await getDocs(q);
-          const list = [];
-          snapshot.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
-          setClubs(list);
+      if (activeTab === 'events') {
+        const q = query(collection(db, 'events'), where('status', '==', 'active'));
+        const snapshot = await getDocs(q);
+        const list = [];
+        const now = new Date();
+        snapshot.forEach(doc => {
+          const data = doc.data();
+          // Filter future/ongoing events (endAt >= now, or startAt >= now if no endAt)
+          if (new Date(data.endAt || data.startAt) >= now) {
+            list.push({ id: doc.id, ...data });
+          }
+        });
+        setEvents(list);
+        setEvents(list);
+      } else if (activeTab === 'requests') {
+        const q = query(collection(db, 'clubs'), where('approvalStatus', '==', 'pending'));
+        const snapshot = await getDocs(q);
+        const list = [];
+        snapshot.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
+        setRequests(list);
       } else {
-          // Fetch events with pending appeals
-         const q = query(collection(db, 'events'), where('appealStatus', '==', 'pending'));
-         const snapshot = await getDocs(q);
-         const list = [];
-         snapshot.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
-         setAppeals(list);
+        const q = query(collection(db, 'events'), where('appealStatus', '==', 'pending'));
+        const snapshot = await getDocs(q);
+        const list = [];
+        snapshot.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
+        setAppeals(list);
       }
     } catch (error) {
       console.error(error);
@@ -47,316 +66,263 @@ export default function MobileAdmin() {
     }
   };
 
-  const handleApproveClub = async (clubId) => {
+  const openSuspendModal = (eventId) => {
+    setTargetEventId(eventId);
+    setSuspendReason('');
+    setSuspendModalVisible(true);
+  };
+
+  const handleConfirmSuspend = async () => {
+    if (!suspendReason.trim()) {
+      Alert.alert("Required", "Please enter a reason.");
+      return;
+    }
     try {
-      await updateDoc(doc(db, 'clubs', clubId), { approved: true });
-      Alert.alert('Success', 'Club approved');
+      await updateDoc(doc(db, 'events', targetEventId), {
+        status: 'suspended',
+        appealStatus: 'none',
+        suspensionReason: suspendReason
+      });
+      Alert.alert('Suspended', 'Event suspended successfully.');
+      setSuspendModalVisible(false);
       fetchData();
     } catch (error) {
-      Alert.alert('Error', 'Failed to approve club');
+      Alert.alert('Error', 'Failed to suspend event');
     }
   };
 
-  const handleRejectClub = async (clubId) => {
-    try {
-      await deleteDoc(doc(db, 'clubs', clubId));
-      Alert.alert('Rejected', 'Club request removed');
-      fetchData();
-    } catch (error) {
-      Alert.alert('Error', 'Failed to reject club');
-    }
-  };
-
-  // --- APPEAL HANDLERS ---
   const handleAcceptAppeal = async (eventId) => {
-      try {
-          await updateDoc(doc(db, 'events', eventId), { 
-              status: 'active', 
-              appealStatus: 'resolved' 
-          });
-          Alert.alert("Restored", "Event is active again.");
-          fetchData();
-      } catch (e) {
-          Alert.alert("Error", "Failed to restore event");
-      }
+    try {
+      await updateDoc(doc(db, 'events', eventId), {
+        status: 'active',
+        appealStatus: 'resolved',
+        suspensionReason: deleteField()
+      });
+      Alert.alert("Restored", "Event is active again.");
+      fetchData();
+    } catch (e) {
+      Alert.alert("Error", "Failed to restore event");
+    }
   };
 
   const handleRejectAppeal = async (eventId) => {
-      try {
-           await updateDoc(doc(db, 'events', eventId), { 
-              appealStatus: 'rejected' 
-          });
-          Alert.alert("Rejected", "Appeal rejected. Event remains suspended.");
-          fetchData();
-      } catch (e) {
-          Alert.alert("Error", "Failed to update");
-      }
+    try {
+      await updateDoc(doc(db, 'events', eventId), {
+        appealStatus: 'rejected'
+      });
+      Alert.alert("Rejected", "Appeal rejected.");
+      fetchData();
+    } catch (e) {
+      Alert.alert("Error", "Failed to update");
+    }
+  };
+
+  const handleApproveClub = async (reqId, ownerId) => {
+    try {
+      await updateDoc(doc(db, 'clubs', reqId), { approvalStatus: 'approved' });
+      if (ownerId) await updateDoc(doc(db, 'users', ownerId), { role: 'club' });
+      Alert.alert("Approved", "Club approved and user promoted.");
+      fetchData();
+    } catch (e) { Alert.alert("Error", e.message); }
+  };
+
+  const handleRejectClub = async (reqId) => {
+    try {
+      await updateDoc(doc(db, 'clubs', reqId), { approvalStatus: 'rejected' });
+      Alert.alert("Rejected", "Club request rejected.");
+      fetchData();
+    } catch (e) { Alert.alert("Error", e.message); }
   };
 
   const onRefresh = () => {
-      setRefreshing(true);
-      fetchData();
+    setRefreshing(true);
+    fetchData();
   };
 
- const seedData = async () => {
-  if (!user) return Alert.alert("Error", "User not found");
-  setLoading(true);
-  try {
-    const sampleEvents = [
-      {
-        title: 'Hackathon 2024',
-        description: 'Annual university hackathon. Join us for 24 hours of coding!',
-        startAt: new Date(Date.now() + 86400000).toISOString(),
-        endAt: new Date(Date.now() + 86400000 + 86400000).toISOString(),
-        location: 'Main Auditorium',
-        category: 'Tech',
-        bannerUrl: 'https://media.istockphoto.com/id/1484758991/photo/hackathon-concept-the-meeting-at-the-white-office-table.jpg?s=1024x1024&w=is&k=20&c=l62tt_4blBi7q1DZKcA-F97WBhFp-ya2RUw65ylsaWw=',
-        createdAt: new Date().toISOString(),
-        status: 'active',
-        ownerId: user.uid,
-        ownerEmail: user.email,
-        isPaid: false,
-        price: '0',
-        target: { departments: ['CSE', 'ETC'], years: [1, 2, 3, 4] }
-      },
-      {
-        title: 'Cultural Fest Night',
-        description: 'Music, Dance, and Drama. Open to all departments.',
-        startAt: new Date(Date.now() + 172800000).toISOString(),
-        endAt: new Date(Date.now() + 172800000 + 18000000).toISOString(),
-        location: 'Open Air Theatre',
-        category: 'Cultural',
-        bannerUrl: 'https://media.istockphoto.com/id/2150388165/photo/fans-raise-hands-in-excitement-at-vibrant-outdoor-music-fest-lights-illuminate-stage-dynamic.jpg?s=1024x1024&w=is&k=20&c=rE2gPGLrIqqFbIw5My9Up-Yx4DwmDx4A0MZft8Uwttk=',
-        createdAt: new Date().toISOString(),
-        status: 'active',
-        ownerId: user.uid,
-        ownerEmail: user.email,
-        isPaid: true,
-        price: '500',
-        target: { departments: ['All'], years: [1, 2, 3, 4] }
-      },
-      {
-        title: 'Tech Symposium 2025',
-        description: 'Latest trends in AI, Cloud Computing, and Full-stack Development.',
-        startAt: new Date(Date.now() + 259200000).toISOString(),
-        endAt: new Date(Date.now() + 259200000 + 28800000).toISOString(),
-        location: 'Main Auditorium',
-        category: 'Technical',
-        bannerUrl: 'https://images.unsplash.com/photo-1517336714731-489689fd1ca8?ixlib=rb-4.0.3&auto=format&fit=crop&w=1024&q=80',
-        createdAt: new Date().toISOString(),
-        status: 'active',
-        ownerId: user.uid,
-        ownerEmail: user.email,
-        isPaid: false,
-        price: '0',
-        target: { departments: ['CSE', 'IT', 'ECE'], years: [2, 3, 4] }
-      },
-      {
-        title: 'Annual Sports Day',
-        description: 'Cricket, Football, Volleyball, and Athletics competitions.',
-        startAt: new Date(Date.now() + 432000000).toISOString(),
-        endAt: new Date(Date.now() + 432000000 + 36000000).toISOString(),
-        location: 'Sports Ground',
-        category: 'Sports',
-        bannerUrl: 'https://media.istockphoto.com/id/470755388/photo/fans-at-stadium.jpg?s=612x612&w=0&k=20&c=sBX29xUllKFdvV3LkHAiHDNp9oDxMW40zfXxOIqU-Tg=',
-        createdAt: new Date().toISOString(),
-        status: 'active',
-        ownerId: user.uid,
-        ownerEmail: user.email,
-        isPaid: false,
-        price: '0',
-        target: { departments: ['All'], years: [1, 2, 3, 4] }
-      },
-      {
-        title: 'CodeRush Hackathon',
-        description: '24-hour coding challenge with AI/ML themes. Prizes worth ₹50,000.',
-        startAt: new Date(Date.now() + 518400000).toISOString(),
-        endAt: new Date(Date.now() + 518400000 + 86400000).toISOString(),
-        location: 'Computer Lab Block',
-        category: 'Technical',
-        bannerUrl: 'https://media.istockphoto.com/id/1125107251/vector/hackathon-background-hack-marathon-coding-event-glitch-poster-and-saturated-binary-data-code.jpg?s=612x612&w=0&k=20&c=aqnvlYk_4_8qIQi8bUbg6LQeNBBl8c-FyuSPyXCNgro=',
-        createdAt: new Date().toISOString(),
-        status: 'active',
-        ownerId: user.uid,
-        ownerEmail: user.email,
-        isPaid: true,
-        price: '200',
-        target: { departments: ['CSE', 'IT'], years: [2, 3, 4] }
-      },
-      {
-        title: 'AI/ML Workshop',
-        description: 'Hands-on GenAI, LLMs, and Python implementation. Limited seats.',
-        startAt: new Date(Date.now() + 691200000).toISOString(),
-        endAt: new Date(Date.now() + 691200000 + 14400000).toISOString(),
-        location: 'Seminar Hall B',
-        category: 'Workshop',
-        bannerUrl: 'https://images.unsplash.com/photo-1522202176988-66273c2fd55f?ixlib=rb-4.0.3&auto=format&fit=crop&w=1024&q=80',
-        createdAt: new Date().toISOString(),
-        status: 'active',
-        ownerId: user.uid,
-        ownerEmail: user.email,
-        isPaid: true,
-        price: '300',
-        target: { departments: ['CSE'], years: [3, 4] }
-      },
-      {
-        title: 'Startup Pitch Fest',
-        description: 'Student entrepreneurs pitch ideas to VCs and alumni.',
-        startAt: new Date(Date.now() + 864000000).toISOString(),
-        endAt: new Date(Date.now() + 864000000 + 21600000).toISOString(),
-        location: 'Innovation Hub',
-        category: 'Entrepreneurship',
-        bannerUrl: 'https://images.unsplash.com/photo-1559757148-5c350d0d3c56?ixlib=rb-4.0.3&auto=format&fit=crop&w=1024&q=80',
-        createdAt: new Date().toISOString(),
-        status: 'active',
-        ownerId: user.uid,
-        ownerEmail: user.email,
-        isPaid: false,
-        price: '0',
-        target: { departments: ['All'], years: [3, 4] }
-      }
-    ];
+  const renderEventItem = ({ item }) => (
+    <View style={styles.card}>
+      <View style={styles.cardHeader}>
+        <View style={[styles.iconContainer, { backgroundColor: '#FF6B3520' }]}>
+          <Ionicons name="calendar" size={24} color="#FF6B35" />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.cardTitle}>{item.title}</Text>
+          <Text style={styles.cardSubtitle}>{item.ownerEmail || 'Organizer'}</Text>
+        </View>
+        <View style={[styles.badge, { backgroundColor: '#FF6B3520' }]}>
+          <Text style={[styles.badgeText, { color: '#FF6B35' }]}>ACTIVE</Text>
+        </View>
+      </View>
+      <Text style={styles.cardDesc}>
+        {new Date(item.startAt).toLocaleDateString()} at {item.location}
+      </Text>
+      <View style={styles.actionRow}>
+        <TouchableOpacity style={[styles.actionBtn, styles.rejectBtn]} onPress={() => openSuspendModal(item.id)}>
+          <Text style={[styles.actionBtnText, { color: '#FF4444' }]}>Suspend</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
 
-    for (const ev of sampleEvents) {
-      await addDoc(collection(db, 'events'), ev);
-    }
-    Alert.alert('Success', 'Sample events added! Refresh the User Feed.');
-  } catch (e) {
-    console.error(e);
-    Alert.alert('Error', 'Failed to seed data');
-  } finally {
-    setLoading(false);
-  }
-};
+  const renderRequestItem = ({ item }) => (
+    <View style={styles.card}>
+      <View style={styles.cardHeader}>
+        <View style={[styles.iconContainer, { backgroundColor: '#FF6B3520' }]}>
+          <Ionicons name="people" size={24} color="#FF6B35" />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.cardTitle}>{item.title || 'New Club'}</Text>
+          <Text style={styles.cardSubtitle}>{item.ownerEmail || 'Requester'}</Text>
+        </View>
+        <View style={[styles.badge, { backgroundColor: '#FF6B3520' }]}>
+          <Text style={[styles.badgeText, { color: '#FF6B35' }]}>PENDING</Text>
+        </View>
+      </View>
+      <Text style={styles.cardDesc}>{item.description || "No description provided."}</Text>
+      <View style={styles.actionRow}>
+        <TouchableOpacity style={[styles.actionBtn, styles.rejectBtn]} onPress={() => handleRejectClub(item.id)}>
+          <Text style={[styles.actionBtnText, { color: '#FF4444' }]}>Reject</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.actionBtn, styles.approveBtn]} onPress={() => handleApproveClub(item.id, item.ownerId)}>
+          <Text style={[styles.actionBtnText, { color: '#4CAF50' }]}>Approve</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
 
+  const renderAppealItem = ({ item }) => (
+    <View style={styles.card}>
+      <View style={styles.cardHeader}>
+        <View style={[styles.iconContainer, { backgroundColor: '#FF444420' }]}>
+          <Ionicons name="alert-circle" size={24} color="#FF4444" />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.cardTitle}>{item.title}</Text>
+          <Text style={[styles.cardSubtitle, { color: '#FF4444' }]}>SUSPENDED</Text>
+        </View>
+      </View>
+      <View style={styles.appealBox}>
+        <Text style={styles.appealLabel}>Appeal Message:</Text>
+        <Text style={styles.appealText}>"{item.appealMessage || "No message provided"}"</Text>
+      </View>
+      <View style={styles.actionRow}>
+        <TouchableOpacity style={[styles.actionBtn, styles.rejectBtn]} onPress={() => handleRejectAppeal(item.id)}>
+          <Text style={[styles.actionBtnText, { color: '#FF4444' }]}>Reject Appeal</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.actionBtn, styles.approveBtn]} onPress={() => handleAcceptAppeal(item.id)}>
+          <Text style={[styles.actionBtnText, { color: '#4CAF50' }]}>Restore Event</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
 
   return (
     <ScreenWrapper>
       <View style={styles.header}>
-        <Text style={[theme.typography.h2, { color: theme.colors.text }]}>Admin Dashboard</Text>
-        <TouchableOpacity style={[styles.seedBtn, { backgroundColor: theme.colors.secondary }]} onPress={seedData}>
-             <Text style={styles.seedText}>+ Seed Sample Data</Text>
+        <View>
+          <Text style={styles.headerTitle}>Admin Dashboard</Text>
+          <Text style={styles.headerSubtitle}>Manage platform activity</Text>
+        </View>
+      </View>
+
+      <View style={styles.tabContainer}>
+        <TouchableOpacity style={[styles.tab, activeTab === 'events' && styles.activeTab]} onPress={() => setActiveTab('events')}>
+          <Text style={[styles.tabText, activeTab === 'events' && styles.activeTabText]}>Events</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.tab, activeTab === 'requests' && styles.activeTab]} onPress={() => setActiveTab('requests')}>
+          <Text style={[styles.tabText, activeTab === 'requests' && styles.activeTabText]}>Club Requests</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.tab, activeTab === 'appeals' && styles.activeTab]} onPress={() => setActiveTab('appeals')}>
+          <Text style={[styles.tabText, activeTab === 'appeals' && styles.activeTabText]}>Appeals</Text>
         </TouchableOpacity>
       </View>
 
-      {/* Tabs */}
-      <View style={styles.tabRow}>
-          <TouchableOpacity 
-            style={[styles.tab, activeTab === 'clubs' && { borderBottomColor: theme.colors.primary }]} 
-            onPress={() => setActiveTab('clubs')}
-          >
-              <Text style={[styles.tabText, activeTab === 'clubs' ? { color: theme.colors.primary } : { color: theme.colors.textSecondary }]}>Club Requests</Text>
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={[styles.tab, activeTab === 'appeals' && { borderBottomColor: theme.colors.primary }]} 
-            onPress={() => setActiveTab('appeals')}
-          >
-              <Text style={[styles.tabText, activeTab === 'appeals' ? { color: theme.colors.primary } : { color: theme.colors.textSecondary }]}>Event Appeals</Text>
-          </TouchableOpacity>
-      </View>
+      <FlatList
+        data={activeTab === 'events' ? events : (activeTab === 'requests' ? requests : appeals)}
+        keyExtractor={item => item.id}
+        refreshing={refreshing}
+        onRefresh={onRefresh}
+        renderItem={activeTab === 'events' ? renderEventItem : (activeTab === 'requests' ? renderRequestItem : renderAppealItem)}
+        contentContainerStyle={{ padding: 16, paddingBottom: 100 }}
+        ListEmptyComponent={
+          <View style={styles.emptyContainer}>
+            <Ionicons name="search-outline" size={64} color="#666" />
+            <Text style={styles.emptyText}>
+              {activeTab === 'events' ? "No active events found" : (activeTab === 'requests' ? "No pending club requests" : "No pending appeals")}
+            </Text>
+          </View>
+        }
+      />
 
-      {activeTab === 'clubs' ? (
-        <FlatList
-            data={clubs}
-            keyExtractor={item => item.id}
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            renderItem={({ item }) => (
-            <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
-                <View style={styles.cardContent}>
-                    <Text style={[styles.name, { color: theme.colors.text }]}>{item.name}</Text>
-                    <Text style={[styles.subtext, { color: theme.colors.textSecondary }]}>{item.ownerEmail}</Text>
-                    <Text style={[styles.desc, { color: theme.colors.text }]} numberOfLines={2}>{item.description}</Text>
-                </View>
-                <View style={[styles.actions, { borderTopColor: theme.colors.border }]}>
-                    <TouchableOpacity style={styles.rejectBtn} onPress={() => handleRejectClub(item.id)}>
-                        <Text style={styles.rejectText}>Reject</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.approveBtn} onPress={() => handleApproveClub(item.id)}>
-                        <Text style={styles.approveText}>Approve</Text>
-                    </TouchableOpacity>
-                </View>
+      <Modal visible={suspendModalVisible} transparent animationType="fade" onRequestClose={() => setSuspendModalVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Suspend Event</Text>
+            <Text style={styles.modalSubtitle}>Please provide a reason for suspension.</Text>
+
+            <TextInput
+              style={styles.modalInput}
+              placeholder="Reason (e.g. Violation of terms)..."
+              placeholderTextColor="#666"
+              multiline
+              value={suspendReason}
+              onChangeText={setSuspendReason}
+            />
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity style={[styles.modalBtn, styles.cancelBtn]} onPress={() => setSuspendModalVisible(false)}>
+                <Text style={styles.cancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.modalBtn, styles.confirmBtn]} onPress={handleConfirmSuspend}>
+                <Text style={styles.confirmText}>Suspend</Text>
+              </TouchableOpacity>
             </View>
-            )}
-            ListEmptyComponent={<Text style={[styles.empty, { color: theme.colors.textSecondary }]}>No pending club requests</Text>}
-        />
-      ) : (
-        <FlatList
-            data={appeals}
-            keyExtractor={item => item.id}
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            renderItem={({ item }) => (
-            <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
-                <View style={styles.cardContent}>
-                    <Text style={[styles.name, {color: theme.colors.error}]}>SUSPENDED: {item.title}</Text>
-                    <Text style={[styles.subtext, { color: theme.colors.textSecondary }]}>Appeal Status: Pending Review</Text>
-                    <Text style={[styles.desc, { color: theme.colors.text }]}>To Admin: "We have fixed the guidelines issue."</Text>
-                </View>
-                <View style={[styles.actions, { borderTopColor: theme.colors.border }]}>
-                    <TouchableOpacity style={styles.rejectBtn} onPress={() => handleRejectAppeal(item.id)}>
-                        <Text style={styles.rejectText}>Reject Appeal</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.approveBtn} onPress={() => handleAcceptAppeal(item.id)}>
-                        <Text style={styles.approveText}>Restore Event</Text>
-                    </TouchableOpacity>
-                </View>
-            </View>
-            )}
-            ListEmptyComponent={<Text style={[styles.empty, { color: theme.colors.textSecondary }]}>No pending appeals</Text>}
-        />
-      )}
+          </View>
+        </View>
+      </Modal>
+
     </ScreenWrapper>
   );
 }
 
 const getStyles = (theme) => StyleSheet.create({
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: theme.spacing.s,
-    marginBottom: theme.spacing.m,
-  },
-  seedBtn: {
-      padding: 8,
-      borderRadius: 4,
-  },
-  seedText: { fontWeight: 'bold', fontSize: 12 },
-  
-  tabRow: {
-      flexDirection: 'row',
-      marginBottom: theme.spacing.m,
-      paddingHorizontal: theme.spacing.s,
-  },
-  tab: {
-      flex: 1,
-      paddingVertical: 10,
-      alignItems: 'center',
-      borderBottomWidth: 2,
-      borderBottomColor: 'transparent',
-  },
-  tabText: { fontWeight: 'bold' },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: 10, marginBottom: 20 },
+  headerTitle: { fontSize: 24, fontWeight: '800', color: theme.colors.text },
+  headerSubtitle: { fontSize: 14, color: theme.colors.textSecondary },
+  tabContainer: { flexDirection: 'row', marginHorizontal: 20, backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 12, padding: 4, marginBottom: 20 },
+  tab: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 10 },
+  activeTab: { backgroundColor: theme.colors.surface, ...theme.shadows.small },
+  tabText: { fontSize: 14, fontWeight: '600', color: theme.colors.textSecondary },
+  activeTabText: { color: theme.colors.primary, fontWeight: '700' },
+  card: { backgroundColor: theme.colors.surface, borderRadius: 16, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)', ...theme.shadows.small },
+  cardHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
+  iconContainer: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#FFA50020', alignItems: 'center', justifyContent: 'center' },
+  cardTitle: { fontSize: 16, fontWeight: '700', color: theme.colors.text },
+  cardSubtitle: { fontSize: 12, color: theme.colors.textSecondary },
+  badge: { backgroundColor: '#FFA50020', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
+  badgeText: { fontSize: 10, fontWeight: '700', color: '#FFA500' },
+  cardDesc: { fontSize: 14, color: theme.colors.textSecondary, marginBottom: 16, lineHeight: 20 },
+  appealBox: { backgroundColor: 'rgba(255,255,255,0.03)', padding: 12, borderRadius: 8, marginBottom: 16, borderLeftWidth: 2, borderLeftColor: '#FFA500' },
+  appealLabel: { fontSize: 12, color: theme.colors.textSecondary, marginBottom: 4 },
+  appealText: { fontSize: 14, color: theme.colors.text, fontStyle: 'italic' },
+  actionRow: { flexDirection: 'row', gap: 12, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.1)', paddingTop: 16 },
+  actionBtn: { flex: 1, paddingVertical: 12, borderRadius: 10, alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.05)' },
+  approveBtn: { backgroundColor: '#4CAF5015' },
+  rejectBtn: { backgroundColor: '#FF444415' },
+  actionBtnText: { fontWeight: '700', fontSize: 14 },
+  emptyContainer: { alignItems: 'center', marginTop: 60, opacity: 0.5 },
+  emptyText: { marginTop: 16, fontSize: 16, color: theme.colors.textSecondary },
 
-  card: {
-    marginHorizontal: theme.spacing.s,
-    marginBottom: theme.spacing.m,
-    borderRadius: 8,
-    ...theme.shadows.small,
-    overflow: 'hidden',
-  },
-  cardContent: { padding: theme.spacing.m },
-  name: { fontSize: 18, fontWeight: 'bold', marginBottom: 4 },
-  subtext: { fontSize: 12, marginBottom: 8 },
-  desc: { fontSize: 14 },
-  
-  actions: { flexDirection: 'row', borderTopWidth: 1 },
-  // Keeping these specific colors as they are semantic (action) colors, but ensuring they are visible
-  rejectBtn: { flex: 1, padding: 12, alignItems: 'center', backgroundColor: '#ffebee' },
-  approveBtn: { flex: 1, padding: 12, alignItems: 'center', backgroundColor: '#e8f5e9' },
-  rejectText: { color: theme.colors.error, fontWeight: 'bold' },
-  approveText: { color: theme.colors.success, fontWeight: 'bold' },
-  
-  empty: { textAlign: 'center', marginTop: 40, fontSize: 16 },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  // Modal Styles
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+  modalContent: { width: '100%', backgroundColor: theme.colors.surface, borderRadius: 20, padding: 24, ...theme.shadows.large },
+  modalTitle: { fontSize: 20, fontWeight: 'bold', color: theme.colors.text, marginBottom: 8 },
+  modalSubtitle: { fontSize: 14, color: theme.colors.textSecondary, marginBottom: 20 },
+  modalInput: { backgroundColor: theme.colors.background, color: theme.colors.text, padding: 16, borderRadius: 12, minHeight: 100, textAlignVertical: 'top', marginBottom: 20 },
+  modalButtons: { flexDirection: 'row', gap: 12 },
+  modalBtn: { flex: 1, paddingVertical: 14, borderRadius: 12, alignItems: 'center' },
+  cancelBtn: { backgroundColor: theme.colors.background },
+  confirmBtn: { backgroundColor: '#FF4444' },
+  cancelText: { color: theme.colors.text, fontWeight: '600' },
+  confirmText: { color: '#fff', fontWeight: 'bold' }
 });

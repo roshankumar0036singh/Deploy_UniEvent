@@ -72,19 +72,16 @@ export default function EventCard({ event, onLike, onShare, isLiked = false, isR
                     </View>
                 ) : null}
 
-
-                {/* Recommended Badge (Top Right or Center Overlay) */}
-                {isRecommended && (
-                    <View style={{
-                        position: 'absolute', top: 16, left: 16,
-                        backgroundColor: '#FFD700', paddingHorizontal: 10, paddingVertical: 4,
-                        borderRadius: 12, flexDirection: 'row', alignItems: 'center', gap: 4,
-                        zIndex: 10, ...theme.shadows.small
-                    }}>
-                        <Ionicons name="star" size={12} color="#000" />
-                        <Text style={{ fontSize: 10, fontWeight: 'bold', color: '#000' }}>PICK</Text>
+                {/* SUSPENDED Badge */}
+                {event.status === 'suspended' && (
+                    <View style={[styles.onlineBadge, { backgroundColor: '#FF4444' }]}>
+                        <Ionicons name="alert-circle" size={12} color="#fff" />
+                        <Text style={styles.onlineText}>SUSPENDED</Text>
                     </View>
                 )}
+
+
+                {/* Removed Top Pick badge from banner - moved to details row */}
             </View>
 
             {/* 2. CONTENT CONTAINER */}
@@ -131,6 +128,25 @@ export default function EventCard({ event, onLike, onShare, isLiked = false, isR
                                 {event.views || 0} Views
                             </Text>
                         </View>
+
+                        {/* Top Pick Badge - Moved here */}
+                        {isRecommended && (
+                            <View style={{
+                                backgroundColor: '#FFD700',
+                                paddingHorizontal: 8,
+                                paddingVertical: 4,
+                                borderRadius: 12,
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                gap: 4,
+                                alignSelf: 'flex-start',
+                                marginTop: 4,
+                                ...theme.shadows.small
+                            }}>
+                                <Ionicons name="star" size={12} color="#000" />
+                                <Text style={{ fontSize: 10, fontWeight: 'bold', color: '#000' }}>TOP PICK</Text>
+                            </View>
+                        )}
                     </View>
 
                     {/* Price Badge */}
@@ -145,18 +161,18 @@ export default function EventCard({ event, onLike, onShare, isLiked = false, isR
                 {showRegisterButton && (
                     isRegistered ? (
                         <View style={[styles.registerBtn, { backgroundColor: theme.colors.success, ...theme.shadows.default }]}>
-                        <Ionicons name="checkmark-circle" size={16} color="#fff" style={{ marginRight: 4 }} />
-                        <Text style={styles.registerText}>REGISTERED</Text>
-                    </View>
-                ) : (
-                    <TouchableOpacity
-                        style={[styles.registerBtn, { backgroundColor: theme.colors.primary, ...theme.shadows.default }]}
-                        onPress={() => navigation.navigate('EventDetail', { eventId: event.id })}
-                    >
-                        <Text style={styles.registerText}>REGISTER</Text>
-                    </TouchableOpacity>
-                )
-            )}
+                            <Ionicons name="checkmark-circle" size={16} color="#fff" style={{ marginRight: 4 }} />
+                            <Text style={styles.registerText}>REGISTERED</Text>
+                        </View>
+                    ) : (
+                        <TouchableOpacity
+                            style={[styles.registerBtn, { backgroundColor: theme.colors.primary, ...theme.shadows.default }]}
+                            onPress={() => navigation.navigate('EventDetail', { eventId: event.id })}
+                        >
+                            <Text style={styles.registerText}>REGISTER</Text>
+                        </TouchableOpacity>
+                    )
+                )}
 
             </View>
         </TouchableOpacity>

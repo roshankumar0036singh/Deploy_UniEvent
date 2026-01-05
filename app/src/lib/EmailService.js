@@ -4,19 +4,14 @@ import { Alert } from 'react-native';
 // EmailJS Configuration
 const EMAILJS_SERVICE_ID = 'service_l8ymwou';
 const EMAILJS_PUBLIC_KEY = 'JEl6-aRIRV9Pbp_ZC';
-const EMAILJS_TEMPLATE_ANNOUNCEMENT = 'template_default';
+const EMAILJS_TEMPLATE_UNIVERSAL = 'template_general'; // Unified template
 const EMAILJS_TEMPLATE_FEEDBACK = 'template_feedback';
 
 /**
  * Sends an email using EmailJS
- * @param {string} toName - Recipient Name
- * @param {string} toEmail - Recipient Email
- * @param {string} subject - Email Subject
- * @param {string} message - Email Body
- * @param {object} additionalData - Extra variables for the template
- * @param {string} templateId - Template ID to use
+ * ... (same)
  */
-export const sendEmail = async (toName, toEmail, subject, message, additionalData = {}, templateId = EMAILJS_TEMPLATE_ANNOUNCEMENT) => {
+export const sendEmail = async (toName, toEmail, subject, message, additionalData = {}, templateId = EMAILJS_TEMPLATE_UNIVERSAL) => {
     const data = {
         service_id: EMAILJS_SERVICE_ID,
         template_id: templateId,
@@ -45,7 +40,6 @@ export const sendEmail = async (toName, toEmail, subject, message, additionalDat
         } else {
             const errorText = await response.text();
             console.error('EmailJS Error:', errorText);
-            // Alert.alert("Email Error", "Failed to send email. Check configuration."); // Suppress alert for bulk
             return false;
         }
     } catch (error) {
@@ -55,16 +49,27 @@ export const sendEmail = async (toName, toEmail, subject, message, additionalDat
 };
 
 /**
- * Sends a bulk announcement to a list of participants
- * @param {Array} participants - List of { name, email } objects
- * @param {string} subject 
- * @param {string} message 
+ * Sends a bulk announcement (Message only)
  */
 export const sendBulkAnnouncement = async (participants, subject, message) => {
     let successCount = 0;
     for (const p of participants) {
         if (p.email) {
-            const sent = await sendEmail(p.name || 'Participant', p.email, subject, message, {}, EMAILJS_TEMPLATE_ANNOUNCEMENT);
+            // cert_display: 'none' hides the certificate section
+            const sent = await sendEmail(
+                p.name || 'Participant',
+                p.email,
+                subject,
+                message,
+
+                {
+                    cert_display: 'none',
+                    event_link: 'https://unievent-ez2w.onrender.com', // Default to home/browse
+                    download_btn_display: 'none',
+                    browse_btn_display: 'block'
+                },
+                EMAILJS_TEMPLATE_UNIVERSAL
+            );
             if (sent) successCount++;
         }
     }
@@ -72,14 +77,11 @@ export const sendBulkAnnouncement = async (participants, subject, message) => {
 };
 
 /**
- * Sends a bulk feedback request to participants
- * @param {Array} participants 
- * @param {string} eventTitle 
- * @param {string} eventId 
+ * Sends a bulk feedback request
  */
 export const sendBulkFeedbackRequest = async (participants, eventTitle, eventId) => {
     let successCount = 0;
-    const feedbackLink = `https://unievent-ez2w.onrender.com/event/${eventId}/feedback`; // Update with your actual link
+    const feedbackLink = `https://unievent-ez2w.onrender.com/event/${eventId}/feedback`;
     const subject = `Feedback Request: ${eventTitle}`;
     const message = `Thank you for attending ${eventTitle}. Please take a moment to share your feedback.`;
 
@@ -92,6 +94,38 @@ export const sendBulkFeedbackRequest = async (participants, eventTitle, eventId)
                 message,
                 { event_title: eventTitle, feedback_link: feedbackLink },
                 EMAILJS_TEMPLATE_FEEDBACK
+            );
+            if (sent) successCount++;
+        }
+    }
+    return successCount;
+};
+
+/**
+ * Sends bulk certificates (Message + Certificate)
+ */
+export const sendBulkCertificates = async (participants, eventTitle, date, eventLink) => {
+    let successCount = 0;
+    const subject = `Certificate of Participation: ${eventTitle}`;
+    const message = `We are pleased to present you with this certificate for your participation in ${eventTitle}.`;
+
+    for (const p of participants) {
+        if (p.email) {
+            // cert_display: 'block' shows the certificate section
+            const sent = await sendEmail(
+                p.name || 'Participant',
+                p.email,
+                subject,
+                message,
+                {
+                    event_title: eventTitle,
+                    date: date || new Date().toLocaleDateString(),
+                    cert_display: 'block',
+                    event_link: eventLink || 'https://unievent-ez2w.onrender.com',
+                    download_btn_display: 'block',
+                    browse_btn_display: 'none'
+                },
+                EMAILJS_TEMPLATE_UNIVERSAL
             );
             if (sent) successCount++;
         }

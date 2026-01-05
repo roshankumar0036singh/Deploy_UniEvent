@@ -76,7 +76,7 @@ export default function UserFeed({ navigation, headerContent }) {
             const list = [];
             snapshot.forEach(doc => {
                 const data = doc.data();
-                if (data.status === 'suspended' && data.ownerId !== user.uid && role !== 'admin') return;
+                if (data.status === 'suspended') return;
                 list.push({ id: doc.id, ...data });
             });
             setEvents(list);

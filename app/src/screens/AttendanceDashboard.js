@@ -29,38 +29,47 @@ export default function AttendanceDashboard({ route, navigation }) {
     const [announcementMessage, setAnnouncementMessage] = useState('');
     const [sending, setSending] = useState(false);
 
-    const handleRequestFeedback = async () => {
-        Alert.alert("Send Feedback Request", "Send email to all participants asking for feedback?", [
-            { text: "Cancel", style: "cancel" },
-            {
-                text: "Send", onPress: async () => {
-                    setSending(true);
-                    try {
-                        const participantsRef = collection(db, `events/${eventId}/participants`);
-                        const snapshot = await getDocs(participantsRef);
-                        const participants = snapshot.docs.map(doc => ({
-                            name: doc.data().name,
-                            email: doc.data().email
-                        })).filter(p => p.email && p.email !== '-');
+    // Feedback Request Modal State
+    const [feedbackModalVisible, setFeedbackModalVisible] = useState(false);
 
-                        if (participants.length === 0) {
-                            Alert.alert("Error", "No participants found.");
-                            setSending(false);
-                            return;
-                        }
+    const handleRequestFeedback = () => {
+        setFeedbackModalVisible(true);
+    };
 
-                        const count = await sendBulkFeedbackRequest(participants, eventTitle, eventId);
-                        Alert.alert("Success", `Feedback request sent to ${count} participants.`);
+    const handleSendFeedbackRequest = async () => {
+        setSending(true);
+        setFeedbackModalVisible(false);
 
-                    } catch (e) {
-                        console.error(e);
-                        Alert.alert("Error", "Failed to send requests.");
-                    } finally {
-                        setSending(false);
-                    }
-                }
+        try {
+            const participantsRef = collection(db, `events/${eventId}/participants`);
+            const snapshot = await getDocs(participantsRef);
+            const participants = snapshot.docs.map(doc => ({
+                name: doc.data().name,
+                email: doc.data().email
+            })).filter(p => p.email && p.email !== '-');
+
+            if (participants.length === 0) {
+                Alert.alert("Error", "No participants found.");
+                setSending(false);
+                return;
             }
-        ]);
+
+            const count = await sendBulkFeedbackRequest(participants, eventTitle, eventId);
+
+            // Update event to mark feedback as sent
+            await updateDoc(doc(db, 'events', eventId), {
+                feedbackRequestSent: true,
+                feedbackRequestSentAt: new Date().toISOString()
+            });
+
+            Alert.alert("Success", `Feedback request sent to ${count} participants.`);
+
+        } catch (e) {
+            console.error(e);
+            Alert.alert("Error", "Failed to send requests.");
+        } finally {
+            setSending(false);
+        }
     };
 
     const handleSendAnnouncement = async () => {
@@ -528,7 +537,6 @@ export default function AttendanceDashboard({ route, navigation }) {
                 )}
 
                 {/* Communication Section */}
-                {/* Communication Section */}
                 <View style={styles.exportContainer}>
                     <Text style={[styles.exportTitle, { color: theme.colors.text }]}>Communication</Text>
                     <View style={styles.exportButtons}>
@@ -540,12 +548,15 @@ export default function AttendanceDashboard({ route, navigation }) {
                             <Text style={[styles.exportBtnText, { color: theme.colors.primary }]}>Announce</Text>
                         </TouchableOpacity>
 
-                        {/* Automatic Feedback Status Indicator (Clickable to Force Send) */}
+                        {/* Manual Feedback Request Button */}
                         <TouchableOpacity
                             style={[
                                 styles.exportBtn,
                                 styles.premiumBtn,
-                                { borderColor: eventData?.feedbackRequestSent ? theme.colors.success : theme.colors.border, backgroundColor: theme.colors.surface }
+                                {
+                                    borderColor: eventData?.feedbackRequestSent ? theme.colors.success : theme.colors.primary,
+                                    backgroundColor: theme.colors.surface
+                                }
                             ]}
                             onPress={handleRequestFeedback}
                             disabled={sending}
@@ -557,17 +568,14 @@ export default function AttendanceDashboard({ route, navigation }) {
                                 </>
                             ) : (
                                 <>
-                                    <Ionicons name="star-outline" size={24} color={theme.colors.secondary} />
-                                    <Text style={[styles.exportBtnText, { color: theme.colors.textSecondary }]}>
-                                        {new Date() > new Date(eventData?.endAt || 0) ? "Sending..." : "Pending"}
+                                    <Ionicons name="star-outline" size={24} color={theme.colors.primary} />
+                                    <Text style={[styles.exportBtnText, { color: theme.colors.primary }]}>
+                                        Feedback
                                     </Text>
                                 </>
                             )}
                         </TouchableOpacity>
                     </View>
-                    <Text style={{ marginTop: 8, fontSize: 12, color: theme.colors.textSecondary }}>
-                        *Feedback requests are sent automatically when the event ends.
-                    </Text>
                 </View>
 
                 {/* Export Data Section */}
@@ -640,8 +648,61 @@ export default function AttendanceDashboard({ route, navigation }) {
                             onPress={handleSendAnnouncement}
                             disabled={sending}
                         >
-                            {sending ? <ActivityIndicator color="#fff" /> : <Text style={styles.sendBtnText}>Send to All Participants</Text>}
+                            {sending ? <ActivityIndicator color="#fff" /> : <Text style={styles.sendBtnText}>Send Announcement</Text>}
                         </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
+
+            {/* Feedback Request Modal */}
+            <Modal
+                visible={feedbackModalVisible}
+                transparent
+                animationType="slide"
+                onRequestClose={() => setFeedbackModalVisible(false)}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={[styles.modalContent, { backgroundColor: theme.colors.surface }]}>
+                        <View style={styles.modalHeader}>
+                            <Text style={[styles.modalTitle, { color: theme.colors.text }]}>Feedback</Text>
+                            <TouchableOpacity onPress={() => setFeedbackModalVisible(false)}>
+                                <Ionicons name="close" size={24} color={theme.colors.textSecondary} />
+                            </TouchableOpacity>
+                        </View>
+
+                        <View style={{ paddingVertical: 20 }}>
+                            <Ionicons name="mail-outline" size={48} color={theme.colors.primary} style={{ alignSelf: 'center', marginBottom: 16 }} />
+                            <Text style={[styles.modalDescription, { color: theme.colors.text, textAlign: 'center' }]}>
+                                Send feedback request emails to all registered participants?
+                            </Text>
+                            <Text style={[styles.modalSubtext, { color: theme.colors.textSecondary, textAlign: 'center', marginTop: 8 }]}>
+                                They will receive a beautiful email with a link to rate the event and provide feedback.
+                            </Text>
+                        </View>
+
+                        <View style={{ flexDirection: 'row', gap: 12 }}>
+                            <TouchableOpacity
+                                style={[styles.modalButton, { backgroundColor: theme.colors.surface, borderWidth: 1, borderColor: theme.colors.border, flex: 1 }]}
+                                onPress={() => setFeedbackModalVisible(false)}
+                            >
+                                <Text style={[styles.modalButtonText, { color: theme.colors.text }]}>Cancel</Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                                style={[styles.modalButton, { backgroundColor: theme.colors.primary, flex: 1 }]}
+                                onPress={handleSendFeedbackRequest}
+                                disabled={sending}
+                            >
+                                {sending ? (
+                                    <ActivityIndicator color="#fff" />
+                                ) : (
+                                    <>
+                                        <Ionicons name="send" size={16} color="#fff" style={{ marginRight: 6 }} />
+                                        <Text style={[styles.modalButtonText, { color: '#fff' }]}>Send Emails</Text>
+                                    </>
+                                )}
+                            </TouchableOpacity>
+                        </View>
                     </View>
                 </View>
             </Modal>
@@ -730,5 +791,17 @@ const styles = StyleSheet.create({
     sendBtn: {
         padding: 16, borderRadius: 14, alignItems: 'center', marginTop: 10
     },
-    sendBtnText: { color: '#fff', fontSize: 16, fontWeight: 'bold' }
+    sendBtnText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
+
+    // Feedback Modal Styles
+    modalDescription: { fontSize: 16, fontWeight: '600', lineHeight: 24 },
+    modalSubtext: { fontSize: 14, lineHeight: 20 },
+    modalButton: {
+        padding: 14,
+        borderRadius: 12,
+        alignItems: 'center',
+        justifyContent: 'center',
+        flexDirection: 'row'
+    },
+    modalButtonText: { fontSize: 15, fontWeight: '700' }
 });

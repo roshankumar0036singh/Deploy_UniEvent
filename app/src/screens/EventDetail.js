@@ -4,17 +4,23 @@ import { addDoc, collection, deleteDoc, doc, getDoc, getDocs, increment, onSnaps
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Dimensions, ImageBackground, Linking, Platform, ScrollView, Share, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import FeedbackModal from '../components/FeedbackModal';
+import AppealModal from '../components/AppealModal';
+import * as Print from 'expo-print';
+import * as Sharing from 'expo-sharing';
 import { useAuth } from '../lib/AuthContext';
 import * as CalendarService from '../lib/CalendarService';
 import { submitFeedback } from '../lib/feedbackService';
 import { db } from '../lib/firebaseConfig';
 import { cancelScheduledNotification, scheduleEventReminder } from '../lib/notificationService';
 import { useTheme } from '../lib/ThemeContext';
+import { sendBulkCertificates } from '../lib/EmailService';
 
 const { width } = Dimensions.get('window');
 
+const UniEventLogo = require('../../assets/UniEvent.png');
+
 export default function EventDetail({ route, navigation }) {
-    const { eventId } = route.params;
+    const { eventId, action } = route.params;
     const { user, role } = useAuth();
     const { theme } = useTheme();
     const styles = useMemo(() => getStyles(theme), [theme]);
@@ -26,9 +32,46 @@ export default function EventDetail({ route, navigation }) {
     const [participantCount, setParticipantCount] = useState(0);
     const [hasGivenFeedback, setHasGivenFeedback] = useState(false);
     const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+    const [showAppealModal, setShowAppealModal] = useState(false);
+
+    const [sendingAppeal, setSendingAppeal] = useState(false);
+
+
+
+    // ... existing useEffects ...
+
+
+
+    const handleSubmitAppeal = async ({ subject, message }) => {
+        setSendingAppeal(true);
+        try {
+            await updateDoc(doc(db, 'events', event.id), {
+                appealStatus: 'pending',
+                appealSubject: subject,
+                appealMessage: message
+            });
+            setShowAppealModal(false);
+            Alert.alert("Submitted", "Appeal sent to admin for review.");
+        } catch (e) {
+            Alert.alert("Error", "Failed to submit appeal");
+        } finally {
+            setSendingAppeal(false);
+        }
+    };
     const [hostName, setHostName] = useState('Organizer');
     const [reminderId, setReminderId] = useState(null); // Firestore Doc ID if set
     const [isBookmarked, setIsBookmarked] = useState(false);
+
+    // Auto-open feedback modal if accessed via feedback link
+    useEffect(() => {
+        if (action === 'feedback' && event && !loading) {
+            // Check if event has ended and user is registered
+            const eventEnded = new Date() > new Date(event.endAt);
+            if (eventEnded && rsvpStatus === 'going' && !hasGivenFeedback) {
+                setShowFeedbackModal(true);
+            }
+        }
+    }, [action, event, loading, rsvpStatus, hasGivenFeedback]);
 
     useEffect(() => {
         if (event?.ownerId) {
@@ -358,52 +401,333 @@ export default function EventDetail({ route, navigation }) {
     };
 
     const sendCertificates = async () => {
-        console.log("Sending certificates...");
         setSendingCertificates(true);
         try {
-            const idToken = await user.getIdToken();
-            const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
-            console.log("API URL:", API_URL);
+            // Fetch Participants
+            console.log(`Fetching participants for event: ${event.id}`);
+            const participantsRef = collection(db, `events/${event.id}/participants`);
+            const snapshot = await getDocs(participantsRef);
+            console.log(`Snapshot size: ${snapshot.size}`);
 
-            const res = await fetch(`${API_URL}/api/sendCertificates`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${idToken}`
-                },
-                body: JSON.stringify({ eventId: event.id })
+            const participants = snapshot.docs.map(doc => {
+                const data = doc.data();
+                console.log(`Participant: ${data.name}, Email: ${data.email}`);
+                return {
+                    name: data.name,
+                    email: data.email
+                };
+            }).filter(p => p.email && p.email !== '-');
+
+            console.log(`Valid participants count: ${participants.length}`);
+
+            if (participants.length === 0) {
+                Alert.alert("Error", "No participants found with valid emails.");
+                setSendingCertificates(false);
+                return;
+            }
+
+            // Send certificates via EmailJS (Frontend)
+            console.log("Calling sendBulkCertificates...");
+            const eventLink = `https://unievent-ez2w.onrender.com/event/${event.id}`;
+            const count = await sendBulkCertificates(participants, event.title, new Date(event.startAt).toLocaleDateString(), eventLink);
+            console.log(`Sent count: ${count}`);
+
+            // Update event status
+            await updateDoc(doc(db, 'events', event.id), {
+                certificatesSent: true,
+                certificatesSentAt: new Date().toISOString()
             });
 
-            const data = await res.json();
-            console.log("Response:", data);
-
-            if (!res.ok) throw new Error(data.message || 'Failed to send');
-
-            Alert.alert("Success", `Certificates sent to ${data.result.total} participants.`);
+            Alert.alert("Success", `Certificates sent to ${count} participants.`);
         } catch (e) {
             console.error("Certificate Send Error:", e);
-            Alert.alert("Error", e.message || "Failed to send certificates");
+            Alert.alert("Error", "Failed to send certificates via EmailJS");
         } finally {
             setSendingCertificates(false);
         }
     };
 
+    const handleDownloadCertificate = async () => {
+        try {
+            setSendingCertificates(true);
+
+            // Modern Professional Certificate Design
+            const html = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <style>
+                    @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&family=Great+Vibes&family=Montserrat:wght@300;400;600&family=Playfair+Display:ital,wght@0,400;0,700;1,400&display=swap');
+                    
+                    @page { margin: 0; size: auto; }
+                    
+                    body { margin: 0; padding: 0; background-color: #fff; -webkit-print-color-adjust: exact; }
+                    
+                    .page { 
+                        width: 100vw; height: 100vh; 
+                        box-sizing: border-box; 
+                        display: flex; align-items: center; justify-content: center;
+                        background: #fff;
+                        padding: 20px;
+                    }
+
+                    .border-frame {
+                        width: 100%; height: 100%;
+                        max-width: 95%; max-height: 95%;
+                        border: 5px solid #FF6B35;
+                        display: flex; align-items: center; justify-content: center;
+                        position: relative;
+                        background: radial-gradient(circle at center, #ffffff 0%, #fffbf2 100%);
+                    }
+
+                    .inner-frame {
+                        width: 98%; height: 98%;
+                        border: 2px solid #333;
+                        display: flex; flex-direction: column;
+                        justify-content: space-between;
+                        align-items: center;
+                        padding: 40px 20px;
+                        box-sizing: border-box;
+                        position: relative;
+                    }
+
+                    /* Corner Ornaments (CSS Shapes) */
+                    .corner {
+                        position: absolute; width: 40px; height: 40px;
+                        border-color: #FF6B35; border-style: solid;
+                    }
+                    .tl { top: 10px; left: 10px; border-width: 3px 0 0 3px; }
+                    .tr { top: 10px; right: 10px; border-width: 3px 3px 0 0; }
+                    .bl { bottom: 10px; left: 10px; border-width: 0 0 3px 3px; }
+                    .br { bottom: 10px; right: 10px; border-width: 0 3px 3px 0; }
+
+                    /* Text Logo */
+                    .brand-name {
+                        font-family: 'Great Vibes', cursive;
+                        font-size: 50px;
+                        color: #FF6B35;
+                        margin-bottom: 30px;
+                    }
+                    
+                    /* Title */
+                    h1 { 
+                        font-family: 'Cinzel', serif; 
+                        font-size: 42px; 
+                        color: #1a1a1a; 
+                        text-transform: uppercase; 
+                        letter-spacing: 6px; 
+                        margin: 0;
+                        font-weight: 700;
+                        text-align: center;
+                        border-bottom: 2px solid #FF6B35;
+                        padding-bottom: 10px;
+                        display: inline-block;
+                    }
+                    
+                    p.certify { 
+                        font-family: 'Montserrat', sans-serif;
+                        font-size: 14px; 
+                        color: #555; 
+                        text-transform: uppercase;
+                        letter-spacing: 3px;
+                        margin-top: 40px;
+                        margin-bottom: 10px;
+                    }
+                    
+                    /* Participant Name */
+                    h2.name { 
+                        font-family: 'Playfair Display', serif;
+                        font-style: italic;
+                        font-size: 58px; 
+                        color: #000; 
+                        margin: 10px 0;
+                        padding: 0 20px;
+                        text-align: center;
+                        line-height: 1.2;
+                    }
+                    
+                    p.participated { 
+                        font-family: 'Montserrat', sans-serif;
+                        font-size: 16px; 
+                        color: #555; 
+                        margin: 20px 0;
+                        letter-spacing: 1px;
+                        max-width: 80%;
+                        text-align: center;
+                        line-height: 1.5;
+                    }
+
+                    p.participated strong {
+                        color: #FF6B35;
+                        font-weight: 600;
+                    }
+                    
+                    /* Event Title */
+                    h3.event { 
+                        font-family: 'Cinzel', serif;
+                        color: #e65100; 
+                        font-size: 32px; 
+                        margin: 0 0 40px 0; 
+                        font-weight: 600; 
+                        text-transform: uppercase;
+                        letter-spacing: 2px;
+                        text-align: center;
+                    }
+                    
+                    .footer { 
+                        width: 100%;
+                        display: flex; 
+                        justify-content: space-around; 
+                        align-items: flex-end;
+                        margin-top: auto;
+                        padding-bottom: 20px;
+                    }
+                    
+                    .sign-box { text-align: center; }
+                    .sign-name { 
+                        font-family: 'Great Vibes', cursive; 
+                        font-size: 32px; 
+                        color: #333; 
+                        margin-bottom: 5px; 
+                        border-bottom: 1px solid #999;
+                        min-width: 180px;
+                        padding-bottom: 5px;
+                    }
+                    .sign-label { 
+                        font-family: 'Montserrat', sans-serif;
+                        font-size: 10px; 
+                        color: #777; 
+                        text-transform: uppercase; 
+                        letter-spacing: 2px;
+                        padding-top: 5px;
+                    }
+
+                    .watermark {
+                        position: absolute;
+                        top: 50%; left: 50%;
+                        transform: translate(-50%, -50%);
+                        font-family: 'Cinzel', serif;
+                        font-size: 110px;
+                        opacity: 0.03;
+                        color: #000;
+                        font-weight: 700;
+                        z-index: 0;
+                        pointer-events: none;
+                        white-space: nowrap;
+                    }
+
+                    .certificate-id {
+                        position: absolute;
+                        bottom: 10px;
+                        right: 15px;
+                        font-family: 'Montserrat', sans-serif;
+                        font-size: 8px;
+                        color: #aaa;
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="page">
+                    <div class="border-frame">
+                        <div class="inner-frame">
+                            <div class="corner tl"></div>
+                            <div class="corner tr"></div>
+                            <div class="corner bl"></div>
+                            <div class="corner br"></div>
+
+                            <div class="watermark">UniEvent</div>
+                            
+                            <!-- Header -->
+                            <div style="text-align: center; width: 100%; z-index: 1;">
+                                <div class="brand-name">UniEvent</div>
+                                <h1>Certificate of Participation</h1>
+                            </div>
+                            
+                            <!-- Body -->
+                            <div style="text-align: center; width: 100%; z-index: 1; flex: 1; display: flex; flex-direction: column; justify-content: center;">
+                                <p class="certify">This is to certify that</p>
+                                
+                                <h2 class="name">${user.displayName || 'Participant'}</h2>
+                                
+                                <p class="participated">
+                                    has successfully demonstrated commitment and enthusiasm by participating in the event
+                                </p>
+                                
+                                <h3 class="event">${event.title}</h3>
+                            </div>
+                            
+                            <!-- Footer -->
+                            <div class="footer" style="z-index: 1;">
+                                <div class="sign-box">
+                                    <div class="sign-name">UniEvent Team</div>
+                                    <div class="sign-label">Organizer</div>
+                                </div>
+                                
+                                <div style="opacity: 0.9;">
+                                    <!-- Badge Icon -->
+                                    <svg width="60" height="60" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                        <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" fill="#FFB74D" stroke="#E65100" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                                        <path d="M12 17.77V2" stroke="#E65100" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" stroke-opacity="0.5"/>
+                                    </svg>
+                                </div>
+                                
+                                <div class="sign-box">
+                                    <div class="sign-name">${new Date(event.startAt).toLocaleDateString()}</div>
+                                    <div class="sign-label">Date Issued</div>
+                                </div>
+                            </div>
+
+                            <div class="certificate-id">ID: ${event.id.substring(0, 8).toUpperCase()}-${Date.now().toString().substring(8)}</div>
+                        </div>
+                    </div>
+                </div>
+            </body>
+            </html>
+            `;
+
+            if (Platform.OS === 'web') {
+                // Custom Iframe Print to ensure only certificate is printed
+                const iframe = document.createElement('iframe');
+                iframe.style.position = 'absolute';
+                iframe.style.top = '-10000px';
+                iframe.style.left = '-10000px';
+                document.body.appendChild(iframe);
+
+                iframe.contentDocument.open();
+                iframe.contentDocument.write(html);
+                iframe.contentDocument.close();
+
+                // Delay to allow Base64 and styles to render
+                setTimeout(() => {
+                    iframe.contentWindow.focus();
+                    iframe.contentWindow.print();
+                    setTimeout(() => {
+                        if (document.body.contains(iframe)) {
+                            document.body.removeChild(iframe);
+                        }
+                    }, 500);
+                }, 500);
+            } else {
+                const { uri } = await Print.printToFileAsync({ html });
+
+                if (await Sharing.isAvailableAsync()) {
+                    await Sharing.shareAsync(uri, { UTI: '.pdf', mimeType: 'application/pdf' });
+                } else {
+                    Alert.alert("Success", "Certificate generated!");
+                }
+            }
+
+        } catch (e) {
+            console.error("Certificate Error:", e);
+            Alert.alert("Error", "Failed to generate certificate: " + e.message);
+        } finally {
+            setSendingCertificates(false); // Reset loading state
+        }
+    };
+
     const handleSendCertificates = async () => {
         console.log("Send Certificates Button Clicked");
-        if (Platform.OS === 'web') {
-            if (window.confirm("Are you sure you want to email certificates to all confirmed participants?")) {
-                sendCertificates();
-            }
-        } else {
-            Alert.alert(
-                "Send Certificates",
-                "Are you sure you want to email certificates to all confirmed participants?",
-                [
-                    { text: "Cancel", style: "cancel" },
-                    { text: "Send", onPress: sendCertificates }
-                ]
-            );
-        }
+        sendCertificates();
     };
 
     const handleFeedbackSubmit = async (data) => {
@@ -429,6 +753,7 @@ export default function EventDetail({ route, navigation }) {
     if (loading || !event) return (
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
             <ActivityIndicator size="large" color={theme.colors.primary} />
+
         </View>
     );
 
@@ -471,6 +796,31 @@ export default function EventDetail({ route, navigation }) {
 
                 {/* Content Sheet */}
                 <View style={styles.contentSheet}>
+                    {/* SUSPENSION BANNER */}
+                    {event?.status === 'suspended' && (
+                        <View style={{ backgroundColor: '#FF444420', padding: 16, borderRadius: 12, marginBottom: 20, borderWidth: 1, borderColor: '#FF4444' }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                                <Ionicons name="warning" size={24} color="#FF4444" />
+                                <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#FF4444' }}>Event Suspended</Text>
+                            </View>
+                            <Text style={{ color: theme.colors.text }}>
+                                This event has been suspended by the admin for violating guidelines.
+                                {event.appealStatus === 'pending' ? "\n\n⚠️ Your appeal is under review." : ""}
+                            </Text>
+
+                            {/* OWNER APPEAL BUTTON */}
+                            {(user?.uid === event?.ownerId && event?.appealStatus !== 'pending') && (
+                                <TouchableOpacity
+                                    style={{ backgroundColor: '#FF4444', padding: 12, borderRadius: 8, marginTop: 12, alignItems: 'center' }}
+                                    onPress={() => setShowAppealModal(true)}
+                                >
+                                    <Text style={{ color: 'white', fontWeight: 'bold' }}>Appeal Suspension</Text>
+                                </TouchableOpacity>
+                            )}
+                        </View>
+                    )}
+
+
                     {/* Header Section */}
                     <View style={styles.headerSection}>
                         <View style={styles.badgeRow}>
@@ -629,38 +979,37 @@ export default function EventDetail({ route, navigation }) {
                                     <Text style={[styles.compactButtonText, { color: theme.colors.primary }]}>Analytics</Text>
                                 </TouchableOpacity>
 
-                                <TouchableOpacity
-                                    style={[
-                                        styles.compactButton, 
-                                        { 
-                                            borderColor: event.certificatesSent ? theme.colors.success : theme.colors.primary,
-                                            width: '100%', // Keep this one full width or let it flow? Let's make it distinct.
-                                            marginTop: 4 
-                                            // Actually, user said 'tools ui is looking too big width', implying they want smaller buttons.
-                                            // Let's make them all share space.
-                                        },
-                                        // If sent, change style
-                                        event.certificatesSent && { backgroundColor: theme.colors.success + '10', borderColor: theme.colors.success }
-                                    ]}
-                                    onPress={event.certificatesSent ? () => Alert.alert("Sent", "Certificates have already been sent.") : handleSendCertificates}
-                                    disabled={sendingCertificates}
-                                >
-                                    {sendingCertificates ? (
-                                        <ActivityIndicator size="small" color={event.certificatesSent ? theme.colors.success : theme.colors.primary} />
-                                    ) : (
-                                        <Ionicons 
-                                            name={event.certificatesSent ? "checkmark-done-circle" : "mail-outline"} 
-                                            size={20} 
-                                            color={event.certificatesSent ? theme.colors.success : theme.colors.primary} 
-                                        />
-                                    )}
-                                    <Text style={[
-                                        styles.compactButtonText, 
-                                        { color: event.certificatesSent ? theme.colors.success : theme.colors.primary }
-                                    ]}>
-                                        {sendingCertificates ? "Sending..." : (event.certificatesSent ? "Certificates Sent" : "Send Certificates")}
-                                    </Text>
-                                </TouchableOpacity>
+                                {new Date(event.endAt || event.startAt) < new Date() && (
+                                    <TouchableOpacity
+                                        style={[
+                                            styles.compactButton,
+                                            {
+                                                borderColor: event.certificatesSent ? theme.colors.success : theme.colors.primary,
+                                                width: '100%',
+                                                marginTop: 4
+                                            },
+                                            event.certificatesSent && { backgroundColor: theme.colors.success + '10', borderColor: theme.colors.success }
+                                        ]}
+                                        onPress={event.certificatesSent ? () => Alert.alert("Sent", "Certificates have already been sent.") : handleSendCertificates}
+                                        disabled={sendingCertificates}
+                                    >
+                                        {sendingCertificates ? (
+                                            <ActivityIndicator size="small" color={event.certificatesSent ? theme.colors.success : theme.colors.primary} />
+                                        ) : (
+                                            <Ionicons
+                                                name={event.certificatesSent ? "checkmark-done-circle" : "mail-outline"}
+                                                size={20}
+                                                color={event.certificatesSent ? theme.colors.success : theme.colors.primary}
+                                            />
+                                        )}
+                                        <Text style={[
+                                            styles.compactButtonText,
+                                            { color: event.certificatesSent ? theme.colors.success : theme.colors.primary }
+                                        ]}>
+                                            {sendingCertificates ? "Sending..." : (event.certificatesSent ? "Certificates Sent" : "Send Certificates")}
+                                        </Text>
+                                    </TouchableOpacity>
+                                )}
                             </View>
                         </View>
                     )}
@@ -707,14 +1056,16 @@ export default function EventDetail({ route, navigation }) {
                             style={[
                                 styles.primaryBtn,
                                 rsvpStatus === 'going' && styles.secondaryBtn,
-                                new Date(event.endAt) < new Date() && { backgroundColor: theme.colors.textSecondary, borderColor: theme.colors.textSecondary }
+                                new Date(event.endAt) < new Date() && !(rsvpStatus === 'going' && event.certificatesSent) && { backgroundColor: theme.colors.textSecondary, borderColor: theme.colors.textSecondary }
                             ]}
-                            onPress={toggleRsvp}
-                            disabled={new Date(event.endAt) < new Date()}
+                            onPress={new Date(event.endAt) < new Date() ? (rsvpStatus === 'going' && event.certificatesSent ? handleDownloadCertificate : null) : toggleRsvp}
+                            disabled={new Date(event.endAt) < new Date() && !(rsvpStatus === 'going' && event.certificatesSent)}
                         >
-                            <Text style={[styles.primaryBtnText, rsvpStatus === 'going' && styles.secondaryBtnText, new Date(event.endAt) < new Date() && { color: '#fff' }]}>
+                            <Text style={[styles.primaryBtnText, rsvpStatus === 'going' && styles.secondaryBtnText, (new Date(event.endAt) < new Date() && !(rsvpStatus === 'going' && event.certificatesSent)) && { color: '#fff' }]}>
                                 {new Date(event.endAt) < new Date()
-                                    ? (rsvpStatus === 'going' ? 'Event Ended' : 'Closed')
+                                    ? (rsvpStatus === 'going'
+                                        ? (event.certificatesSent ? 'Download Certificate' : 'Event Ended')
+                                        : 'Closed')
                                     : (rsvpStatus === 'going' ? 'Registered ✓' : (event.isPaid ? `Book Ticket (₹${event.price})` : 'RSVP Now'))
                                 }
                             </Text>
@@ -731,6 +1082,13 @@ export default function EventDetail({ route, navigation }) {
                     clubName: event.organizerName || 'Organizer'
                 }}
                 onSubmit={handleFeedbackSubmit}
+            />
+
+            <AppealModal
+                visible={showAppealModal}
+                onClose={() => setShowAppealModal(false)}
+                onSubmit={handleSubmitAppeal}
+                isSubmitting={sendingAppeal}
             />
 
         </View >
@@ -764,15 +1122,17 @@ const getStyles = (theme) => StyleSheet.create({
     },
     liveText: { color: '#fff', fontSize: 12, fontWeight: 'bold' },
 
-    // Content Sheet
     contentSheet: {
+        flex: 1,
         marginTop: -40,
+        borderTopLeftRadius: 32,
+        borderTopRightRadius: 32,
         backgroundColor: theme.colors.background,
-        borderTopLeftRadius: 30,
-        borderTopRightRadius: 30,
-        paddingHorizontal: 20,
-        paddingTop: 24,
+        paddingHorizontal: 24,
+        paddingTop: 32,
     },
+
+
 
     // Header Section
     headerSection: {
@@ -987,7 +1347,6 @@ const getStyles = (theme) => StyleSheet.create({
         borderRadius: 12,
         alignItems: 'center',
         justifyContent: 'center',
-        marginBottom: 10,
     },
     organizerCardTitle: {
         fontSize: 15,

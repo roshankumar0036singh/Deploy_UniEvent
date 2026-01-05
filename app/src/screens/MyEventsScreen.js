@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { collection, deleteDoc, doc, onSnapshot, query, where } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import EventCard from '../components/EventCard';
 import ScreenWrapper from '../components/ScreenWrapper';
 import { useAuth } from '../lib/AuthContext';
@@ -40,30 +40,38 @@ export default function MyEventsScreen({ navigation }) {
     }, [user]);
 
     const handleDelete = async (eventId) => {
-        Alert.alert(
-            "Delete Event",
-            "Are you sure? This cannot be undone.",
-            [
-                { text: "Cancel", style: "cancel" },
-                {
-                    text: "Delete",
-                    style: "destructive",
-                    onPress: async () => {
-                        try {
-                            await deleteDoc(doc(db, 'events', eventId));
-                        } catch (e) {
-                            Alert.alert("Error", "Could not delete event");
+        if (Platform.OS === 'web') {
+            try {
+                await deleteDoc(doc(db, 'events', eventId));
+            } catch (e) {
+                alert("Error: Could not delete event");
+            }
+        } else {
+            Alert.alert(
+                "Delete Event",
+                "Are you sure? This cannot be undone.",
+                [
+                    { text: "Cancel", style: "cancel" },
+                    {
+                        text: "Delete",
+                        style: "destructive",
+                        onPress: async () => {
+                            try {
+                                await deleteDoc(doc(db, 'events', eventId));
+                            } catch (e) {
+                                Alert.alert("Error", "Could not delete event");
+                            }
                         }
                     }
-                }
-            ]
-        );
+                ]
+            );
+        }
     };
 
     const renderItem = ({ item }) => (
         <View style={styles.cardContainer}>
-            <EventCard 
-                event={item} 
+            <EventCard
+                event={item}
                 showRegisterButton={false}
                 style={{ marginBottom: 0 }}
             />

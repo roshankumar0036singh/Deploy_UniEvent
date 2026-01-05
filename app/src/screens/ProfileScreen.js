@@ -2,9 +2,9 @@ import { Ionicons } from '@expo/vector-icons';
 // import { Picker } from '@react-native-picker/picker'; // Removed native picker
 import { LinearGradient } from 'expo-linear-gradient';
 import { updateProfile } from 'firebase/auth';
-import { collection, doc, getCountFromServer, getDoc, updateDoc } from 'firebase/firestore';
+import { addDoc, collection, doc, getCountFromServer, getDoc, updateDoc } from 'firebase/firestore';
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, Modal, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import PremiumButton from '../components/PremiumButton';
 import PremiumInput from '../components/PremiumInput';
 import ScreenWrapper from '../components/ScreenWrapper';
@@ -51,6 +51,9 @@ export default function ProfileScreen({ navigation }) {
     const [eventsCount, setEventsCount] = useState(0);
     const [rating, setRating] = useState(0);
     const [isEditing, setIsEditing] = useState(false);
+    const [showRequestModal, setShowRequestModal] = useState(false);
+    const [requestSubject, setRequestSubject] = useState('Request Club Access');
+    const [requestMessage, setRequestMessage] = useState('');
     const [loading, setLoading] = useState(false);
 
     useEffect(() => {
@@ -136,7 +139,7 @@ export default function ProfileScreen({ navigation }) {
         try {
             const idToken = await user.getIdToken();
             const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
-            
+
             const res = await fetch(`${API_URL}/api/sendDailyDigest`, {
                 method: 'POST',
                 headers: {
@@ -146,12 +149,39 @@ export default function ProfileScreen({ navigation }) {
             });
 
             const data = await res.json();
+            // The HTML snippet below is likely intended for a server-side email template.
+            // Inserting it directly into client-side JavaScript would cause a syntax error.
+            // If this is meant to be part of the message content, it should be passed as a string.
+            // For now, assuming the user wants to modify the error message structure if `res.ok` is false.
             if (!res.ok) throw new Error(data.message || 'Failed');
 
             Alert.alert("Success", data.message || `Digest sent! Events today: ${data.count}`);
         } catch (error) {
             console.error(error);
             Alert.alert("Error", error.message || "Failed to send digest");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleSubmitRequest = async () => {
+        if (!requestMessage) return Alert.alert("Error", "Please enter a message explaining why you want to be an organizer.");
+        try {
+            setLoading(true);
+            await addDoc(collection(db, 'clubs'), {
+                title: name || 'New Club',
+                // description: bio, // Keep bio if needed, but message is primary
+                message: requestMessage,
+                subject: requestSubject,
+                ownerId: user.uid,
+                ownerEmail: user.email,
+                approvalStatus: 'pending',
+                createdAt: new Date()
+            });
+            setShowRequestModal(false);
+            Alert.alert("Success", "Application submitted! Pending Admin approval.");
+        } catch (e) {
+            Alert.alert("Error", e.message);
         } finally {
             setLoading(false);
         }
@@ -370,6 +400,18 @@ export default function ProfileScreen({ navigation }) {
                                     theme={theme}
                                     styles={styles}
                                 />
+                                {(role !== 'club' && role !== 'admin') && (
+                                    <>
+                                        <View style={styles.divider} />
+                                        <MenuItem
+                                            icon="briefcase-outline"
+                                            label="Request Organizer Access"
+                                            onPress={() => setShowRequestModal(true)}
+                                            theme={theme}
+                                            styles={styles}
+                                        />
+                                    </>
+                                )}
                             </View>
                         </View>
 
@@ -447,7 +489,42 @@ export default function ProfileScreen({ navigation }) {
                 )}
 
             </ScrollView>
-        </ScreenWrapper>
+
+            <Modal visible={showRequestModal} transparent animationType="slide">
+                <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 20 }}>
+                    <View style={{ backgroundColor: theme.colors.background, padding: 20, borderRadius: 12 }}>
+                        <Text style={{ fontSize: 18, fontWeight: 'bold', color: theme.colors.text, marginBottom: 15 }}>Request Club Access</Text>
+
+                        <Text style={{ color: theme.colors.textSecondary, marginBottom: 5 }}>Subject</Text>
+                        <TextInput
+                            value={requestSubject}
+                            onChangeText={setRequestSubject}
+                            style={{ borderWidth: 1, borderColor: theme.colors.border, borderRadius: 8, padding: 10, color: theme.colors.text, marginBottom: 15 }}
+                        />
+
+                        <Text style={{ color: theme.colors.textSecondary, marginBottom: 5 }}>Message to Admin</Text>
+                        <TextInput
+                            value={requestMessage}
+                            onChangeText={setRequestMessage}
+                            placeholder="Why do you want to start a club?"
+                            placeholderTextColor={theme.colors.textSecondary}
+                            multiline
+                            numberOfLines={4}
+                            style={{ borderWidth: 1, borderColor: theme.colors.border, borderRadius: 8, padding: 10, color: theme.colors.text, height: 100, textAlignVertical: 'top', marginBottom: 20 }}
+                        />
+
+                        <View style={{ flexDirection: 'row', gap: 10 }}>
+                            <TouchableOpacity onPress={() => setShowRequestModal(false)} style={{ flex: 1, padding: 12, borderRadius: 8, borderWidth: 1, borderColor: theme.colors.border, alignItems: 'center' }}>
+                                <Text style={{ color: theme.colors.text }}>Cancel</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity onPress={handleSubmitRequest} style={{ flex: 1, padding: 12, borderRadius: 8, backgroundColor: theme.colors.primary, alignItems: 'center' }}>
+                                <Text style={{ color: '#fff', fontWeight: 'bold' }}>Submit</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
+        </ScreenWrapper >
     );
 }
 
